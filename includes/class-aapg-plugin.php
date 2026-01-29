@@ -31,10 +31,67 @@ final class Plugin {
         add_action('admin_menu', [$this, 'admin_menu']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('wp_ajax_aapg_generate_page', [$this, 'ajax_generate_page']);
+        add_action('wp_ajax_aapg_save_hub_maker_settings', [$this, 'ajax_save_hub_maker_settings']);
+        add_action('wp_ajax_aapg_save_stub_maker_settings', [$this, 'ajax_save_stub_maker_settings']);
         add_action('wp_ajax_aapg_publish_page', [$this, 'ajax_publish_page']);
+        add_action('wp_ajax_aapg_test_stream', [$this, 'ajax_test_stream']);
+        add_action('wp_ajax_aapg_test_image', [$this, 'ajax_test_image']);
+        add_action('wp_ajax_aapg_stub_node_generate', [$this, 'ajax_stub_node_generate']);
+        add_action('wp_ajax_aapg_stub_node_generate_stream', [$this, 'ajax_stub_node_generate_stream']);
+        add_action('wp_ajax_aapg_research_generate_stream', [$this, 'ajax_research_generate_stream']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_scripts']);
         add_shortcode('aapg_generator', [$this, 'render_shortcode']);
+    }
+
+    public function ajax_save_hub_maker_settings(): void {
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'aapg')]);
+        }
+
+        $acf_field_group_key = sanitize_text_field($_POST['acf_field_group_key'] ?? '');
+        $elementor_template_id = absint($_POST['elementor_template_id'] ?? 0);
+        $page_title = sanitize_text_field($_POST['page_title'] ?? '');
+        $prompt_id = sanitize_text_field($_POST['prompt_id'] ?? '');
+
+        $existing_settings = get_option(AAPG_OPTION_KEY, []);
+        update_option(AAPG_OPTION_KEY, array_merge($existing_settings, [
+            'hub_maker_default_acf_group' => $acf_field_group_key,
+            'hub_maker_default_elementor_template' => $elementor_template_id,
+            'hub_maker_default_page_title' => $page_title,
+            'hub_maker_default_prompt_id' => $prompt_id,
+        ]));
+
+        wp_send_json_success(['message' => __('Hub Maker settings saved.', 'aapg')]);
+    }
+
+    public function ajax_save_stub_maker_settings(): void {
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'aapg')]);
+        }
+
+        $elementor_template_id = absint($_POST['elementor_template_id'] ?? 0);
+        $acf_group_id = sanitize_text_field($_POST['acf_group_id'] ?? '');
+        $prompt_id = sanitize_text_field($_POST['prompt_id'] ?? '');
+        $prompt = sanitize_textarea_field($_POST['prompt'] ?? '');
+        $library = sanitize_text_field($_POST['library'] ?? '');
+        $parent_page_id = absint($_POST['parent_page_id'] ?? 0);
+
+        $existing_settings = get_option(AAPG_OPTION_KEY, []);
+        update_option(AAPG_OPTION_KEY, array_merge($existing_settings, [
+            'default_elementor_template' => $elementor_template_id,
+            'default_acf_group' => $acf_group_id,
+            'default_prompt_id' => $prompt_id,
+            'default_prompt' => $prompt,
+            'stub_maker_default_library' => $library,
+            'stub_maker_default_parent_page_id' => $parent_page_id,
+        ]));
+
+        wp_send_json_success(['message' => __('Stub Maker settings saved.', 'aapg')]);
     }
 
     public function admin_menu(): void {
@@ -46,6 +103,69 @@ final class Plugin {
             [$this, 'render_admin_page'],
             'dashicons-admin-page',
             25
+        );
+
+        add_settings_section(
+            'aapg_stub_node_section',
+            __('Stub Node Settings', 'aapg'),
+            [$this, 'stub_node_section_callback'],
+            AAPG_OPTION_KEY
+        );
+
+        add_settings_field(
+            'aapg_default_elementor_template',
+            __('Default Elementor Template', 'aapg'),
+            [$this, 'field_elementor_template'],
+            AAPG_OPTION_KEY,
+            'aapg_stub_node_section'
+        );
+
+        add_settings_field(
+            'aapg_default_acf_group',
+            __('Default ACF Field Group', 'aapg'),
+            [$this, 'field_acf_group'],
+            AAPG_OPTION_KEY,
+            'aapg_stub_node_section'
+        );
+
+        add_settings_field(
+            'aapg_default_prompt_id',
+            __('Default Prompt ID', 'aapg'),
+            [$this, 'field_text_input'],
+            AAPG_OPTION_KEY,
+            'aapg_stub_node_section',
+            'aapg_default_prompt_id',
+            'Enter the default OpenAI prompt ID for stub node generation.'
+        );
+
+        add_settings_field(
+            'aapg_default_prompt',
+            __('Default Prompt Content', 'aapg'),
+            [$this, 'field_textarea'],
+            AAPG_OPTION_KEY,
+            'aapg_stub_node_section',
+            'aapg_default_prompt',
+            'Enter the default prompt content for stub node generation.'
+        );
+
+        add_settings_field(
+            'aapg_default_research_trigger',
+            __('Default Research Trigger', 'aapg'),
+            [$this, 'field_textarea'],
+            AAPG_OPTION_KEY,
+            'aapg_stub_node_section',
+            'aapg_default_research_trigger',
+            'Enter the default research trigger placeholder.'
+        );
+
+        add_settings_field(
+            'aapg_default_seo_master_trigger',
+            __('Default SEO Master Trigger', 'aapg'),
+            [$this, 'field_textarea'],
+            AAPG_OPTION_KEY,
+            'aapg_stub_node_section',
+            'aapg_default_seo_master_trigger',
+            'Enter the default SEO master trigger placeholder.'
         );
     }
 
@@ -59,6 +179,16 @@ final class Plugin {
                     'model' => isset($value['model']) ? sanitize_text_field($value['model']) : 'gpt-4.1-mini',
                     'prompt_id' => isset($value['prompt_id']) ? sanitize_text_field($value['prompt_id']) : 'pmpt_697732cd233081979612e14e3c8b8f260bc2b578e7052e41',
                     'prompt_version' => isset($value['prompt_version']) ? sanitize_text_field($value['prompt_version']) : '1',
+                    'hub_maker_default_prompt_id' => isset($value['hub_maker_default_prompt_id']) ? sanitize_text_field($value['hub_maker_default_prompt_id']) : '',
+                    // Stub node defaults
+                    'default_elementor_template' => isset($value['default_elementor_template']) ? intval($value['default_elementor_template']) : 0,
+                    'default_acf_group' => isset($value['default_acf_group']) ? sanitize_text_field($value['default_acf_group']) : '',
+                    'default_prompt_id' => isset($value['default_prompt_id']) ? sanitize_text_field($value['default_prompt_id']) : '',
+                    'default_prompt' => isset($value['default_prompt']) ? sanitize_textarea_field($value['default_prompt']) : '',
+                    'default_research_trigger' => isset($value['default_research_trigger']) ? sanitize_textarea_field($value['default_research_trigger']) : '',
+                    'default_seo_master_trigger' => isset($value['default_seo_master_trigger']) ? sanitize_textarea_field($value['default_seo_master_trigger']) : '',
+                    'stub_maker_default_library' => isset($value['stub_maker_default_library']) ? sanitize_textarea_field($value['stub_maker_default_library']) : '',
+                    'stub_maker_default_parent_page_id' => isset($value['stub_maker_default_parent_page_id']) ? intval($value['stub_maker_default_parent_page_id']) : 0,
                 ];
             },
             'default' => [ 
@@ -66,6 +196,16 @@ final class Plugin {
                 'model' => 'gpt-4.1-mini',
                 'prompt_id' => 'pmpt_697732cd233081979612e14e3c8b8f260bc2b578e7052e41',
                 'prompt_version' => '1',
+                'hub_maker_default_prompt_id' => '',
+                // Stub node defaults
+                'default_elementor_template' => 0,
+                'default_acf_group' => '',
+                'default_prompt_id' => '',
+                'default_prompt' => '',
+                'default_research_trigger' => '',
+                'default_seo_master_trigger' => '',
+                'stub_maker_default_library' => '',
+                'stub_maker_default_parent_page_id' => 0,
             ],
         ]);
 
@@ -117,6 +257,7 @@ final class Plugin {
         $parent_page_id = absint($_POST['parent_page_id'] ?? 0);
         $page_title = sanitize_text_field($_POST['page_title'] ?? '');
         $input_text = wp_kses_post($_POST['input_text'] ?? '');
+        $posted_prompt_id = sanitize_text_field($_POST['prompt_id'] ?? '');
 
         $errors = [];
         if (!$field_group_key) $errors[] = __('No ACF field group selected.', 'aapg');
@@ -131,7 +272,7 @@ final class Plugin {
         $settings = get_option(AAPG_OPTION_KEY, []);
         $api_key = $settings['openai_api_key'] ?? '';
         $model = $settings['model'] ?? 'gpt-4.1-mini';
-        $prompt_id = $settings['prompt_id'] ?? 'pmpt_697732cd233081979612e14e3c8b8f260bc2b578e7052e41';
+        $prompt_id = $posted_prompt_id ?: ($settings['hub_maker_default_prompt_id'] ?? ($settings['prompt_id'] ?? 'pmpt_697732cd233081979612e14e3c8b8f260bc2b578e7052e41'));
         $prompt_version = $settings['prompt_version'] ?? '1';
 
         if (!$api_key) {
@@ -145,6 +286,7 @@ final class Plugin {
             'parent_page_id' => $parent_page_id,
             'page_title' => $page_title,
             'input_text' => $input_text,
+            'prompt_id' => $posted_prompt_id,
         ]);
 
         // Guard ACF + Elementor before doing anything
@@ -230,6 +372,337 @@ final class Plugin {
         ]);
     }
 
+    public function ajax_test_stream(): void {
+        @set_time_limit(0);
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'aapg')]);
+        }
+
+        $test_prompt = sanitize_textarea_field($_POST['test_prompt'] ?? 'Make a stub for the Frisco of topic01 full stack');
+
+        if (empty($test_prompt)) {
+            wp_send_json_error(['message' => __('Test prompt is required.', 'aapg')]);
+        }
+
+        // Include the stream request handler
+        require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-stream-request.php';
+
+        // Set headers for SSE
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('Connection: keep-alive');
+        header('Access-Control-Allow-Origin: *');
+        header('Access-Control-Allow-Headers: Cache-Control');
+
+        // Custom callback to send SSE data
+        $callback = function($event, $data) {
+            static $full_text = '';
+
+            if ($event === 'response.output_text.delta') {
+                if (!empty($data['delta'])) {
+                    $full_text .= $data['delta'];
+                    $content = $data['delta'];
+                    echo "data: " . json_encode(['content' => $content]) . "\n\n";
+                    ob_flush();
+                    flush();
+                }
+            }
+            
+            if ($event === 'response.completed') {
+                // Prefer authoritative final output if present
+                $final_text = $full_text;
+
+                if (!empty($data['output'])) {
+                    foreach ($data['output'] as $item) {
+                        if ($item['type'] === 'message' && !empty($item['content'])) {
+                            foreach ($item['content'] as $content) {
+                                if ($content['type'] === 'output_text') {
+                                    $final_text = $content['text'];
+                                }
+                            }
+                        }
+                    }
+                }
+
+                echo "data: " . json_encode(['done' => true, 'reason' => 'completed', 'final_text' => $final_text]) . "\n\n";
+                ob_flush();
+                flush();
+            }
+            
+            if ($event === 'response.error') {
+                echo "data: " . json_encode(['error' => 'Stream error: ' . print_r($data, true)]) . "\n\n";
+                ob_flush();
+                flush();
+            }
+        };
+
+        // Test request data - Correct Responses API format
+        $request_data = [
+            'model' => 'gpt-5.2',
+            
+            'stream' => true,
+
+            'reasoning' => [
+                'effort' => 'none',
+                'summary' => 'auto'
+            ],
+
+            'prompt' => [
+                'id' => 'pmpt_6968f6823e788194af48638752b7ad8008a8aa0bb9111a2e'
+            ],
+
+            'input' => [
+                [
+                    'role' => 'user',
+                    'content' => $test_prompt
+                ]
+            ],
+           
+        ];
+
+        $stream_request = new AAPG_Stream_Request();
+        $result = $stream_request->stream_request($request_data, $callback);
+
+        if (is_wp_error($result)) {
+            echo "data: " . json_encode(['error' => $result->get_error_message()]) . "\n\n";
+            ob_flush();
+            flush();
+        }
+
+        echo "data: " . json_encode(['done' => true]) . "\n\n";
+        ob_flush();
+        flush();
+        exit;
+    }
+
+    public function ajax_research_generate_stream(): void {
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            status_header(403);
+            echo "event: error\n";
+            echo 'data: ' . wp_json_encode(['message' => __('Permission denied.', 'aapg')]) . "\n\n";
+            exit;
+        }
+
+        @set_time_limit(0);
+
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('Connection: keep-alive');
+        header('X-Accel-Buffering: no');
+
+        while (ob_get_level() > 0) {
+            ob_end_flush();
+        }
+        ob_implicit_flush(true);
+
+        $post_type = sanitize_text_field($_POST['post_type'] ?? '');
+        $prompt_id = sanitize_text_field($_POST['prompt_id'] ?? '');
+        $prompt = sanitize_textarea_field($_POST['prompt'] ?? '');
+
+        if (empty($post_type) || empty($prompt_id) || empty($prompt)) {
+            echo "event: error\n";
+            echo 'data: ' . wp_json_encode(['message' => __('Post Type, Prompt ID and Prompt content are required.', 'aapg')]) . "\n\n";
+            echo "event: done\n";
+            echo 'data: ' . wp_json_encode(['done' => true]) . "\n\n";
+            exit;
+        }
+
+        require_once AAPG_PLUGIN_DIR . 'includes/nodes/aapg-research-maker.php';
+
+        $stream_callback = function(string $type, array $payload) {
+            if ($type === 'delta' && !empty($payload['delta'])) {
+                echo "event: delta\n";
+                echo 'data: ' . wp_json_encode(['delta' => $payload['delta']]) . "\n\n";
+                flush();
+                return;
+            }
+            if ($type === 'error') {
+                echo "event: error\n";
+                echo 'data: ' . wp_json_encode(['message' => $payload['message'] ?? 'Stream error']) . "\n\n";
+                flush();
+                return;
+            }
+        };
+
+        $result = \AAPG\Nodes\AAPG_Research_Maker::generate_research_with_streaming(
+            $post_type,
+            $prompt_id,
+            $prompt,
+            $stream_callback
+        );
+
+        if (is_wp_error($result)) {
+            echo "event: error\n";
+            echo 'data: ' . wp_json_encode(['message' => $result->get_error_message()]) . "\n\n";
+            echo "event: done\n";
+            echo 'data: ' . wp_json_encode(['done' => true]) . "\n\n";
+            exit;
+        }
+
+        echo "event: result\n";
+        echo 'data: ' . wp_json_encode($result) . "\n\n";
+        echo "event: done\n";
+        echo 'data: ' . wp_json_encode(['done' => true]) . "\n\n";
+        exit;
+    }
+
+    public function ajax_test_image(): void {
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'aapg')]);
+        }
+
+        $positive_prompt = sanitize_textarea_field($_POST['positive_prompt'] ?? 'A beautiful modern clinic exterior with glass windows, professional architecture, daylight');
+        $negative_prompt = sanitize_textarea_field($_POST['negative_prompt'] ?? 'blurry, low quality, text, watermark, ugly, distorted');
+        $resolution = $_POST['resolution'] ?? '1280x720     (16:9 Landscape)';
+        $custom_width = intval($_POST['custom_width'] ?? 1664);
+        $custom_height = intval($_POST['custom_height'] ?? 928);
+
+        if (empty($positive_prompt)) {
+            wp_send_json_error(['message' => __('Positive prompt is required.', 'aapg')]);
+        }
+
+        // Include the image generation handler
+        require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-image-generation.php';
+
+        $result = aapg_generate_image($positive_prompt, $negative_prompt, $resolution, $custom_width, $custom_height);
+
+        if (is_wp_error($result)) {
+            wp_send_json_error(['message' => $result->get_error_message()]);
+        }
+
+        wp_send_json_success(['image_url' => $result]);
+    }
+
+    public function ajax_stub_node_generate(): void {
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'aapg')]);
+        }
+
+        $elementor_template_id = intval($_POST['elementor_template_id'] ?? 0);
+        $acf_group_id = sanitize_text_field($_POST['acf_group_id'] ?? '');
+        $library = sanitize_text_field($_POST['library'] ?? '');
+        $research_trigger_placeholder = '';
+        $seo_master_trigger_placeholder = '';
+        $prompt_id = sanitize_text_field($_POST['prompt_id'] ?? '');
+        $prompt = sanitize_textarea_field($_POST['prompt'] ?? '');
+        $page_title = 'Generated Page';
+        $parent_page_id = intval($_POST['parent_page_id'] ?? 0);
+
+        if (empty($elementor_template_id) || empty($acf_group_id) || empty($prompt_id) || empty($prompt)) {
+            wp_send_json_error(['message' => __('Template ID, ACF Group ID, Prompt ID, and Prompt content are required.', 'aapg')]);
+        }
+
+        // Include the stub node
+        require_once AAPG_PLUGIN_DIR . 'includes/nodes/aapg-stub-node.php';
+
+        $result = \AAPG\Nodes\AAPG_Stub_Node::generate_page_with_streaming(
+            $elementor_template_id,
+            $acf_group_id,
+            $research_trigger_placeholder,
+            $seo_master_trigger_placeholder,
+            $prompt_id,
+            $prompt,
+            $page_title,
+            $parent_page_id
+        );
+
+        if (is_wp_error($result)) {
+            wp_send_json_error(['message' => $result->get_error_message()]);
+        }
+
+        wp_send_json_success($result);
+    }
+
+    public function ajax_stub_node_generate_stream(): void {
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            status_header(403);
+            echo "event: error\n";
+            echo 'data: ' . wp_json_encode(['message' => __('Permission denied.', 'aapg')]) . "\n\n";
+            exit;
+        }
+
+        @set_time_limit(0);
+
+        // SSE headers
+        header('Content-Type: text/event-stream');
+        header('Cache-Control: no-cache');
+        header('Connection: keep-alive');
+        header('X-Accel-Buffering: no');
+
+        while (ob_get_level() > 0) {
+            ob_end_flush();
+        }
+        ob_implicit_flush(true);
+
+        $elementor_template_id = intval($_POST['elementor_template_id'] ?? 0);
+        $acf_group_id = sanitize_text_field($_POST['acf_group_id'] ?? '');
+        $prompt_id = sanitize_text_field($_POST['prompt_id'] ?? '');
+        $prompt = sanitize_textarea_field($_POST['prompt'] ?? '');
+        $parent_page_id = intval($_POST['parent_page_id'] ?? 0);
+
+        if (empty($elementor_template_id) || empty($acf_group_id) || empty($prompt_id) || empty($prompt)) {
+            echo "event: error\n";
+            echo 'data: ' . wp_json_encode(['message' => __('Template ID, ACF Group ID, Prompt ID, and Prompt content are required.', 'aapg')]) . "\n\n";
+            echo "event: done\n";
+            echo 'data: ' . wp_json_encode(['done' => true]) . "\n\n";
+            exit;
+        }
+
+        require_once AAPG_PLUGIN_DIR . 'includes/nodes/aapg-stub-node.php';
+
+        $stream_callback = function(string $type, array $payload) {
+            if ($type === 'delta' && !empty($payload['delta'])) {
+                echo "event: delta\n";
+                echo 'data: ' . wp_json_encode(['delta' => $payload['delta']]) . "\n\n";
+                flush();
+                return;
+            }
+
+            if ($type === 'error') {
+                echo "event: error\n";
+                echo 'data: ' . wp_json_encode(['message' => $payload['message'] ?? 'Stream error']) . "\n\n";
+                flush();
+                return;
+            }
+        };
+
+        $result = \AAPG\Nodes\AAPG_Stub_Node::generate_page_with_streaming(
+            $elementor_template_id,
+            $acf_group_id,
+            '',
+            '',
+            $prompt_id,
+            $prompt,
+            'Generated Page',
+            $parent_page_id,
+            $stream_callback
+        );
+
+        if (is_wp_error($result)) {
+            echo "event: error\n";
+            echo 'data: ' . wp_json_encode(['message' => $result->get_error_message()]) . "\n\n";
+            echo "event: done\n";
+            echo 'data: ' . wp_json_encode(['done' => true]) . "\n\n";
+            exit;
+        }
+
+        echo "event: result\n";
+        echo 'data: ' . wp_json_encode($result) . "\n\n";
+        echo "event: done\n";
+        echo 'data: ' . wp_json_encode(['done' => true]) . "\n\n";
+        exit;
+    }
+
     private function has_acf(): bool {
         return function_exists('acf_get_field_groups') && function_exists('acf_get_fields') && function_exists('update_field');
     }
@@ -281,7 +754,10 @@ final class Plugin {
     }
 
     private function generate_page_from_openai(array $params): array {
-        $schema = $this->clhs_acf_schema_from_group($params['field_group_key']);
+        // Include the utility class
+        require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-acf-group-openaijsonschema.php';
+        
+        $schema = \AAPG\Utilities\AAPG_ACF_Group_OpenAIJSONSchema::acf_schema_from_group($params['field_group_key']);
 
         // Send JSON Schema request to OpenAI
         $openai_json = $this->call_openai_json_schema([
@@ -520,146 +996,6 @@ final class Plugin {
         }
     }
 
-    private function clhs_acf_schema_from_group(string $field_group_key) {
-        $fields = acf_get_fields($field_group_key);
-
-        $schema = [
-            "type" => "object",
-            "properties" => [],
-            "additionalProperties" => false,
-        ];
-
-        // ACF fields
-        if (is_array($fields)) {
-            foreach ($fields as $field) {
-                $name = isset($field['name']) ? trim((string)$field['name']) : '';
-                if ($name === '' || $field['type'] === 'image') {
-                    continue; // avoid invalid keys or images
-                }
-
-                $schema["properties"][$name] = $this->clhs_acf_schema_for_field($field);
-            }
-        }
-
-        // SEO fields
-        $schema["properties"]["meta_title"] = [
-            "type" => "string",
-            "description" => "Meta Title for SEO",
-        ];
-
-        $schema["properties"]["meta_description"] = [
-            "type" => "string",
-            "description" => "Meta Description for SEO",
-        ];
-
-        // URL Resolution Table (array of objects)
-        $schema["properties"]["URL_RESOLUTION_TABLE"] = [
-            "type" => "array",
-            "description" => "Array of link label to URL mappings. Include mappings for: [LINK_ALL_LOCATIONS], [LINK_AREAS_WE_SERVE], [LINK_APPOINTMENT_FORM], [LINK_DIRECTIONS_PAGE], [LINK_REVIEWS_PAGE], [LINK_TEAM_PAGE], [LINK_RESEARCH_CENTER]. Do NOT include map links like [LINK_FARMERS_BRANCH_MAP], etc.",
-            "items" => [
-                "type" => "object",
-                "properties" => [
-                    "link_label" => [
-                        "type" => "string",
-                        "description" => "The link label (e.g., [LINK_ALL_LOCATIONS])"
-                    ],
-                    "link" => [
-                        "type" => "string", 
-                        "description" => "The URL for this link label"
-                    ]
-                ],
-                "required" => ["link_label", "link"],
-                "additionalProperties" => false
-            ]
-        ];
-
-        // REQUIRED MUST MATCH PROPERTIES EXACTLY (OpenAI schema rule)
-        $schema["required"] = array_values(array_keys($schema["properties"]));
-
-        return $schema;
-    }
-
-    private function clhs_acf_schema_for_field(array $f) {
-        $type = $f['type'];
-        $base = ["description" => $f['label']];
-
-        switch ($type) {
-            case 'text':
-            case 'textarea':
-            case 'wysiwyg':
-            case 'email':
-            case 'url':
-                $base['type'] = 'string';
-                break;
-
-            case 'number':
-                $base['type'] = 'number';
-                break;
-
-            case 'true_false':
-                $base['type'] = 'boolean';
-                break;
-
-            case 'select':
-                $base['type'] = 'string';
-                break;
-
-            case 'checkbox':
-                $base['type'] = 'array';
-                $base['items'] = ['type' => 'string'];
-                break;
-
-            case 'repeater':
-                $sub_props = [];
-                $sub_req = [];
-
-                if (!empty($f['sub_fields'])) {
-                    foreach ($f['sub_fields'] as $sub) {
-                        if ($sub['type'] === 'image') {
-                            continue; // Skip image sub-fields
-                        }
-                        $sub_props[$sub['name']] = $this->clhs_acf_schema_for_field($sub);
-                        $sub_req[] = $sub['name'];
-                    }
-                }
-
-                $base['type'] = 'array';
-                $base['items'] = [
-                    "type" => "object",
-                    "properties" => $sub_props,
-                    "required" => $sub_req,
-                    "additionalProperties" => false
-                ];
-                break;
-
-            case 'group':
-                $sub_props = [];
-                $sub_req = [];
-
-                if (!empty($f['sub_fields'])) {
-                    foreach ($f['sub_fields'] as $sub) {
-                        if ($sub['type'] === 'image') {
-                            continue;
-                        }
-                        $sub_props[$sub['name']] = $this->clhs_acf_schema_for_field($sub);
-                        $sub_req[] = $sub['name'];
-                    }
-                }
-
-                $base['type'] = 'object';
-                $base['properties'] = $sub_props;
-                $base['required'] = $sub_req;
-                $base['additionalProperties'] = false;
-                break;
-
-            default:
-                $base['type'] = 'string';
-                break;
-        }
-
-        return $base;
-    }
-
     public function render_admin_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die(__('You do not have permission to access this page.', 'aapg'));
@@ -700,6 +1036,14 @@ final class Plugin {
         echo '<td><input type="password" id="aapg_api_key" name="' . esc_attr(AAPG_OPTION_KEY) . '[openai_api_key]" value="' . esc_attr($settings['openai_api_key'] ?? '') . '" class="regular-text" autocomplete="off" />'
             . '<p class="description">' . esc_html__('Stored in wp_options. Use a restricted key if possible.', 'aapg') . '</p></td></tr>';
         echo '</table>';
+        
+        // Stub Node Settings Section
+        echo '<h2>' . esc_html__('Stub Node Settings', 'aapg') . '</h2>';
+        echo '<p>' . esc_html__('Configure default values for the Stub Node generation. These values will be pre-filled in the test form.', 'aapg') . '</p>';
+        echo '<table class="form-table" role="presentation">';
+        do_settings_sections(AAPG_OPTION_KEY);
+        echo '</table>';
+        
         submit_button(__('Save Settings', 'aapg'));
         echo '</form>';
         echo '</div>';
@@ -714,22 +1058,6 @@ final class Plugin {
             return '';
         }
 
-        // Mini settings save (accessible from shortcode page)
-        if (isset($_POST['aapg_action']) && $_POST['aapg_action'] === 'save_settings_mini') {
-            check_admin_referer('aapg_settings');
-            if (isset($_POST[AAPG_OPTION_KEY]) && is_array($_POST[AAPG_OPTION_KEY])) {
-                $new_settings = wp_unslash($_POST[AAPG_OPTION_KEY]);
-                $existing_settings = get_option(AAPG_OPTION_KEY, []);
-                
-                update_option(AAPG_OPTION_KEY, array_merge($existing_settings, [
-                    'model' => isset($new_settings['model']) ? sanitize_text_field($new_settings['model']) : 'gpt-4.1-mini',
-                    'prompt_id' => isset($new_settings['prompt_id']) ? sanitize_text_field($new_settings['prompt_id']) : '',
-                    'prompt_version' => isset($new_settings['prompt_version']) ? sanitize_text_field($new_settings['prompt_version']) : '1',
-                ]));
-                echo '<div class="notice notice-success" style="margin-bottom: 20px;"><p>' . esc_html__('Generation settings saved.', 'aapg') . '</p></div>';
-            }
-        }
-
         $field_groups = $this->has_acf() ? acf_get_field_groups() : [];
         $templates = $this->has_elementor() ? $this->get_hubtemplates_elementor_templates() : [];
         $parent_pages = get_pages(['sort_column' => 'post_title', 'sort_order' => 'ASC', 'post_status' => 'publish']);
@@ -741,29 +1069,9 @@ final class Plugin {
         ?>
         <div class="aapg-generator-wrap">
             <h2><?php esc_html_e('Generate Page', 'aapg'); ?></h2>
-            
-            <form method="post" class="aapg-section">
-                <?php wp_nonce_field('aapg_settings'); ?>
-                <input type="hidden" name="aapg_action" value="save_settings_mini" />
-                <h3><?php esc_html_e('OpenAI Generation Settings', 'aapg'); ?></h3>
-                
-                <div class="aapg-form-group">
-                    <label for="aapg_model"><?php esc_html_e('Model', 'aapg'); ?></label>
-                    <input type="text" id="aapg_model" name="<?php echo esc_attr(AAPG_OPTION_KEY); ?>[model]" value="<?php echo esc_attr($settings['model'] ?? 'gpt-4.1-mini'); ?>" />
-                </div>
-                
-                <div class="aapg-form-group">
-                    <label for="aapg_prompt_id"><?php esc_html_e('Prompt ID', 'aapg'); ?></label>
-                    <input type="text" id="aapg_prompt_id" name="<?php echo esc_attr(AAPG_OPTION_KEY); ?>[prompt_id]" value="<?php echo esc_attr($settings['prompt_id'] ?? ''); ?>" />
-                </div>
-                
-               
-                
-                <p class="submit"><button type="submit" class="button button-secondary"><?php esc_html_e('Save Generation Settings', 'aapg'); ?></button></p>
-            </form>
 
-            <form id="aapg-generate-form" class="aapg-section">
-                <h3><?php esc_html_e('Page Details', 'aapg'); ?></h3>
+            <form id="aapg-generate-form" class="aapg-section" style="display:none;">
+                <h3><?php esc_html_e('Hub Maker', 'aapg'); ?></h3>
                 
                 <div class="aapg-form-group">
                     <label for="acf_field_group_key"><?php esc_html_e('ACF Field Group', 'aapg'); ?></label>
@@ -772,7 +1080,8 @@ final class Plugin {
                         <?php foreach ($field_groups as $group) : 
                             $key = $group['key'] ?? '';
                             $title = $group['title'] ?? $key;
-                            $selected = isset($form_values['acf_field_group_key']) && $form_values['acf_field_group_key'] === $key ? ' selected' : '';
+                            $selected_value = $form_values['acf_field_group_key'] ?? ($settings['hub_maker_default_acf_group'] ?? '');
+                            $selected = ($selected_value === $key) ? ' selected' : '';
                         ?>
                             <option value="<?php echo esc_attr($key); ?>"<?php echo $selected; ?>><?php echo esc_html($title); ?> (<?php echo esc_html($key); ?>)</option>
                         <?php endforeach; ?>
@@ -784,7 +1093,8 @@ final class Plugin {
                     <select id="elementor_template_id" name="elementor_template_id">
                         <option value=""><?php esc_html_e('-- Select a template --', 'aapg'); ?></option>
                         <?php foreach ($templates as $tpl) : 
-                            $selected = isset($form_values['elementor_template_id']) && $form_values['elementor_template_id'] == $tpl['ID'] ? ' selected' : '';
+                            $selected_value = $form_values['elementor_template_id'] ?? ($settings['hub_maker_default_elementor_template'] ?? 0);
+                            $selected = ((string)$selected_value === (string)$tpl['ID']) ? ' selected' : '';
                         ?>
                             <option value="<?php echo esc_attr($tpl['ID']); ?>"<?php echo $selected; ?>><?php echo esc_html($tpl['post_title']); ?> (#<?php echo esc_html($tpl['ID']); ?>)</option>
                         <?php endforeach; ?>
@@ -794,9 +1104,9 @@ final class Plugin {
                 <div class="aapg-form-group">
                     <label for="parent_page_id"><?php esc_html_e('Parent Page', 'aapg'); ?></label>
                     <select id="parent_page_id" name="parent_page_id">
-                        <option value=""><?php esc_html_e('-- Select parent page --', 'aapg'); ?></option>
-                        <?php foreach ($parent_pages as $p) : 
-                            $selected = isset($form_values['parent_page_id']) && $form_values['parent_page_id'] == $p->ID ? ' selected' : '';
+                        <option value="0"><?php esc_html_e('-- No parent --', 'aapg'); ?></option>
+                        <?php foreach ($parent_pages as $p) :
+                            $selected = isset($form_values['parent_page_id']) && (string)$form_values['parent_page_id'] === (string)$p->ID ? ' selected' : '';
                         ?>
                             <option value="<?php echo esc_attr($p->ID); ?>"<?php echo $selected; ?>><?php echo esc_html($p->post_title); ?> (#<?php echo esc_html($p->ID); ?>)</option>
                         <?php endforeach; ?>
@@ -805,7 +1115,12 @@ final class Plugin {
 
                 <div class="aapg-form-group">
                     <label for="page_title"><?php esc_html_e('New Page Title', 'aapg'); ?></label>
-                    <input type="text" id="page_title" name="page_title" value="<?php echo esc_attr($form_values['page_title'] ?? ''); ?>" placeholder="<?php esc_attr_e('e.g. Service Area - Dallas', 'aapg'); ?>" required />
+                    <input type="text" id="page_title" name="page_title" value="<?php echo esc_attr($form_values['page_title'] ?? ($settings['hub_maker_default_page_title'] ?? '')); ?>" placeholder="<?php esc_attr_e('e.g. Service Area - Dallas', 'aapg'); ?>" required />
+                </div>
+
+                <div class="aapg-form-group">
+                    <label for="prompt_id"><?php esc_html_e('Prompt ID', 'aapg'); ?></label>
+                    <input type="text" id="prompt_id" name="prompt_id" value="<?php echo esc_attr($form_values['prompt_id'] ?? ($settings['hub_maker_default_prompt_id'] ?? ($settings['prompt_id'] ?? ''))); ?>" placeholder="<?php esc_attr_e('e.g. pmpt_...', 'aapg'); ?>" />
                 </div>
 
                 <div class="aapg-form-group">
@@ -814,6 +1129,7 @@ final class Plugin {
                 </div>
 
                 <p class="submit">
+                    <button type="button" class="button button-secondary" id="aapg-save-hub-maker-settings-btn"><?php esc_html_e('Save Hub Maker Settings', 'aapg'); ?></button>
                     <button type="submit" class="button button-primary" id="aapg-generate-btn"><?php esc_html_e('Generate Page', 'aapg'); ?></button>
                 </p>
             </form>
@@ -822,6 +1138,166 @@ final class Plugin {
                 <div id="aapg-progress-text"></div>
             </div>
             <div id="aapg-result" style="display:none;"></div>
+
+            <!-- Stub Node Test Section -->
+            <div class="aapg-section">
+                <h3><?php esc_html_e('Stub Generation', 'aapg'); ?></h3>
+                <div class="aapg-form-group">
+                    <label for="stub_elementor_template_id"><?php esc_html_e('Elementor Template', 'aapg'); ?></label>
+                    <select id="stub_elementor_template_id">
+                        <option value="">Select a template...</option>
+                        <?php
+                        if (class_exists('\Elementor\Plugin')) {
+                            $args = [
+                                'post_type' => 'elementor_library',
+                                'post_status' => 'publish',
+                                'numberposts' => 50,
+                                'orderby' => 'title',
+                                'order' => 'ASC'
+                            ];
+
+                            if (taxonomy_exists('elementor_library_category')) {
+                                $args['tax_query'] = [
+                                    [
+                                        'taxonomy' => 'elementor_library_category',
+                                        'field' => 'slug',
+                                        'terms' => AAPG_TEMPLATE_CATEGORY_SLUG,
+                                    ]
+                                ];
+                            }
+
+                            $templates = get_posts($args);
+                            $default_template = $settings['default_elementor_template'] ?? 0;
+                            foreach ($templates as $template) {
+                                $selected = $template->ID == $default_template ? ' selected' : '';
+                                echo '<option value="' . esc_attr($template->ID) . '"' . $selected . '>' . esc_html($template->post_title) . ' (ID: ' . $template->ID . ')</option>';
+                            }
+                        } else {
+                            echo '<option value="" disabled>Elementor not available</option>';
+                        }
+                        ?>
+                    </select>
+                </div>
+                <div class="aapg-form-group">
+                    <label for="stub_acf_group_id"><?php esc_html_e('ACF Field Group', 'aapg'); ?></label>
+                    <select id="stub_acf_group_id">
+                        <option value="">Select a field group...</option>
+                        <?php
+                        if (function_exists('acf_get_field_groups')) {
+                            $field_groups = acf_get_field_groups();
+                            $default_group = $settings['default_acf_group'] ?? '';
+                            foreach ($field_groups as $group) {
+                                $selected = $group['key'] === $default_group ? ' selected' : '';
+                                echo '<option value="' . esc_attr($group['key']) . '"' . $selected . '>' . esc_html($group['title']) . ' (' . $group['key'] . ')</option>';
+                            }
+                        } else {
+                            echo '<option value="" disabled>ACF not available</option>';
+                        }
+                        ?>
+                    </select>
+                </div>
+                
+                <div class="aapg-form-group">
+                    <label for="stub_prompt_id"><?php esc_html_e('OpenAI Prompt ID', 'aapg'); ?></label>
+                    <input type="text" id="stub_prompt_id" placeholder="prompt_456def" value="<?php echo esc_attr($settings['default_prompt_id'] ?? ''); ?>">
+                </div>
+                   <div class="aapg-form-group">
+                    <label for="stub_library"><?php esc_html_e('Library', 'aapg'); ?></label>
+                    <textarea id="stub_library" rows="3" placeholder="e.g. hubtemplates"><?php echo esc_textarea($settings['stub_maker_default_library'] ?? ''); ?></textarea>
+                </div>
+                
+                <div class="aapg-form-group">
+                    <label for="stub_prompt"><?php esc_html_e('OpenAI Prompt Content', 'aapg'); ?></label>
+                    <input type="text" id="stub_prompt" placeholder="Enter your complete prompt here..." value="<?php echo esc_attr($settings['default_prompt'] ?? ''); ?>" required>
+                </div>
+                
+                <div class="aapg-form-group">
+                    <label for="stub_parent_page_id"><?php esc_html_e('Parent Page (optional)', 'aapg'); ?></label>
+                    <select id="stub_parent_page_id">
+                        <option value="0">No Parent (Top Level)</option>
+                        <?php
+                        $default_stub_parent_page_id = absint($settings['stub_maker_default_parent_page_id'] ?? 0);
+                        $automation_parent_pages = get_posts([
+                            'post_type' => 'page',
+                            'post_status' => 'publish',
+                            'posts_per_page' => 200,
+                            'orderby' => 'title',
+                            'order' => 'ASC',
+                            'meta_query' => [
+                                [
+                                    'key' => 'isGeneratedByAutomation',
+                                    'value' => 'true',
+                                    'compare' => '=',
+                                ]
+                            ]
+                        ]);
+
+                        foreach ($automation_parent_pages as $page) {
+                            $selected = ($default_stub_parent_page_id === (int) $page->ID) ? ' selected' : '';
+                            echo '<option value="' . esc_attr($page->ID) . '"' . $selected . '>' . esc_html($page->post_title) . ' (ID: ' . $page->ID . ')</option>';
+                        }
+                        ?>
+                    </select>
+                </div>
+                
+                <p class="submit">
+                    <button type="button" class="button button-secondary" id="aapg-save-stub-maker-settings-btn"><?php esc_html_e('Save Stub Maker Settings', 'aapg'); ?></button>
+                    <button type="button" class="button button-primary" id="aapg-test-stub-node-btn"><?php esc_html_e('Generate Page with Stub Node', 'aapg'); ?></button>
+                </p>
+                
+                <div id="aapg-stub-output" style="display:none; margin-top: 20px;">
+                    <h4><?php esc_html_e('Stub Node Generation Result:', 'aapg'); ?></h4>
+                    <div id="aapg-stub-content" style="border: 1px solid #ccc; padding: 10px; background: #f9f9f9;">
+                        <div id="aapg-stub-loading" style="display:none;">
+                            <p><?php esc_html_e('Generating page with streaming OpenAI API... This may take a moment.', 'aapg'); ?></p>
+                        </div>
+                        <div id="aapg-stub-result" style="display:none;">
+                            <!-- Results will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <hr style="margin: 30px 0;">
+
+            <h3><?php esc_html_e('Research Maker', 'aapg'); ?></h3>
+            <p><?php esc_html_e('Generate a Research post with streaming output.', 'aapg'); ?></p>
+
+            <div class="aapg-form-group">
+                <label for="research_post_type"><?php esc_html_e('Target Post Type', 'aapg'); ?></label>
+                <select id="research_post_type">
+                    <?php
+                    $research_post_types = get_post_types(['show_ui' => true], 'objects');
+                    foreach ($research_post_types as $pt) {
+                        echo '<option value="' . esc_attr($pt->name) . '">' . esc_html($pt->labels->singular_name) . ' (' . esc_html($pt->name) . ')</option>';
+                    }
+                    ?>
+                </select>
+            </div>
+
+            <div class="aapg-form-group">
+                <label for="research_prompt_id"><?php esc_html_e('OpenAI Prompt ID', 'aapg'); ?></label>
+                <input type="text" id="research_prompt_id" placeholder="pmpt_xxx" value="">
+            </div>
+
+            <div class="aapg-form-group">
+                <label for="research_prompt"><?php esc_html_e('OpenAI Prompt Content', 'aapg'); ?></label>
+                <textarea id="research_prompt" rows="6" placeholder="Enter your research prompt..." required></textarea>
+            </div>
+
+            <p class="submit">
+                <button type="button" class="button button-primary" id="aapg-generate-research-btn"><?php esc_html_e('Generate Research (Streaming)', 'aapg'); ?></button>
+            </p>
+
+            <div id="aapg-research-output" style="display:none; margin-top: 20px;">
+                <h4><?php esc_html_e('Research Generation Result:', 'aapg'); ?></h4>
+                <div id="aapg-research-content" style="border: 1px solid #ccc; padding: 10px; background: #f9f9f9;">
+                    <div id="aapg-research-loading" style="display:none;">
+                        <p><?php esc_html_e('Generating research with streaming OpenAI API... This may take a moment.', 'aapg'); ?></p>
+                    </div>
+                    <div id="aapg-research-result" style="display:none;"></div>
+                </div>
+            </div>
 
             <?php if (!empty($generated_pages)) : ?>
                 <div class="aapg-section aapg-generated-list">
@@ -952,5 +1428,88 @@ final class Plugin {
 
         // If taxonomy isn't available or no results, fall back: return all templates.
         return $posts;
+    }
+
+    // Settings callback methods
+    public function stub_node_section_callback(): void {
+        echo '<p>' . esc_html__('Configure default values for the Stub Node generation. These values will be pre-filled in the test form.', 'aapg') . '</p>';
+    }
+
+    public function field_elementor_template(): void {
+        $settings = get_option(AAPG_OPTION_KEY, []);
+        $selected = $settings['default_elementor_template'] ?? 0;
+        $templates = $this->has_elementor() ? $this->get_hubtemplates_elementor_templates() : [];
+        
+        echo '<select name="' . esc_attr(AAPG_OPTION_KEY) . '[default_elementor_template]">';
+        echo '<option value="0">' . esc_html__('Select a template...', 'aapg') . '</option>';
+        
+        foreach ($templates as $template) {
+            printf(
+                '<option value="%d" %s>%s (ID: %d)</option>',
+                esc_attr($template['ID']),
+                selected($selected, $template['ID'], false),
+                esc_html($template['post_title']),
+                esc_html($template['ID'])
+            );
+        }
+        
+        echo '</select>';
+    }
+
+    public function field_acf_group(): void {
+        $settings = get_option(AAPG_OPTION_KEY, []);
+        $selected = $settings['default_acf_group'] ?? '';
+        $field_groups = $this->has_acf() ? acf_get_field_groups() : [];
+        
+        echo '<select name="' . esc_attr(AAPG_OPTION_KEY) . '[default_acf_group]">';
+        echo '<option value="">' . esc_html__('Select a field group...', 'aapg') . '</option>';
+        
+        foreach ($field_groups as $group) {
+            printf(
+                '<option value="%s" %s>%s (%s)</option>',
+                esc_attr($group['key']),
+                selected($selected, $group['key'], false),
+                esc_html($group['title']),
+                esc_html($group['key'])
+            );
+        }
+        
+        echo '</select>';
+    }
+
+    public function field_text_input($args): void {
+        $settings = get_option(AAPG_OPTION_KEY, []);
+        $field_name = $args[0] ?? '';
+        $description = $args[1] ?? '';
+        $value = $settings[$field_name] ?? '';
+        
+        printf(
+            '<input type="text" name="%s[%s]" value="%s" class="regular-text" />',
+            esc_attr(AAPG_OPTION_KEY),
+            esc_attr($field_name),
+            esc_attr($value)
+        );
+        
+        if ($description) {
+            printf('<p class="description">%s</p>', esc_html($description));
+        }
+    }
+
+    public function field_textarea($args): void {
+        $settings = get_option(AAPG_OPTION_KEY, []);
+        $field_name = $args[0] ?? '';
+        $description = $args[1] ?? '';
+        $value = $settings[$field_name] ?? '';
+        
+        printf(
+            '<textarea name="%s[%s]" rows="4" class="large-text">%s</textarea>',
+            esc_attr(AAPG_OPTION_KEY),
+            esc_attr($field_name),
+            esc_textarea($value)
+        );
+        
+        if ($description) {
+            printf('<p class="description">%s</p>', esc_html($description));
+        }
     }
 }
