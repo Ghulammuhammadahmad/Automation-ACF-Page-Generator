@@ -10,6 +10,15 @@ jQuery(document).ready(function ($) {
         $section.toggleClass('collapsed');
     });
 
+    // Handle research batch checkbox change
+    $(document).on('change', '#stub_enable_research_batch', function () {
+        if (!$(this).is(':checked')) {
+            // Hide batch interface if unchecked
+            $('#aapg-research-center-batch').hide();
+            window.aapgBatchPrompts = [];
+        }
+    });
+
     $('#aapg-save-hub-maker-settings-btn').on('click', function (e) {
         e.preventDefault();
 
@@ -568,27 +577,32 @@ jQuery(document).ready(function ($) {
 
                     $result.html(html).show();
 
-                    // Extract RC_IMPORT_PACKET fields for batch generation
+                    // Check if research batch generation is enabled
+                    var enableResearchBatch = $('#stub_enable_research_batch').is(':checked');
+                    
+                    // Extract RC_IMPORT_PACKET fields for batch generation only if enabled
                     var batchPrompts = [];
-                    var rcFields = [
-                        'RC_IMPORT_PACKET_CORE_V1',
-                        'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1',
-                        'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2',
-                        'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3',
-                        'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4'
-                    ];
+                    if (enableResearchBatch) {
+                        var rcFields = [
+                            'RC_IMPORT_PACKET_CORE_V1',
+                            'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1',
+                            'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2',
+                            'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3',
+                            'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4'
+                        ];
 
-                    rcFields.forEach(function(fieldKey) {
-                        if (data[fieldKey] && data[fieldKey].trim() !== '') {
-                            batchPrompts.push({
-                                key: fieldKey,
-                                value: data[fieldKey].trim()
-                            });
-                        }
-                    });
+                        rcFields.forEach(function(fieldKey) {
+                            if (data[fieldKey] && data[fieldKey].trim() !== '') {
+                                batchPrompts.push({
+                                    key: fieldKey,
+                                    value: data[fieldKey].trim()
+                                });
+                            }
+                        });
+                    }
 
-                    // Set up batch generation if we have prompts
-                    if (batchPrompts.length > 0) {
+                    // Set up batch generation if we have prompts and it's enabled
+                    if (enableResearchBatch && batchPrompts.length > 0) {
                         window.aapgBatchPrompts = batchPrompts;
                         batchCreatedArticles = []; // Reset articles list
                         
@@ -613,6 +627,7 @@ jQuery(document).ready(function ($) {
                         $('#aapg-abort-batch-btn').prop('disabled', true);
                         $('#aapg-research-center-batch').show();
                     } else {
+                        // Hide batch interface if disabled or no prompts
                         $('#aapg-research-center-batch').hide();
                         window.aapgBatchPrompts = [];
                     }

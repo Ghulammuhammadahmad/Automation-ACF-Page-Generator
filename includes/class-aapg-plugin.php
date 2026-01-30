@@ -1298,6 +1298,16 @@ final class Plugin {
                 </div>
                 
                 <div class="aapg-form-group">
+                    <label>
+                        <input type="checkbox" id="stub_enable_research_batch" checked="checked" style="margin-right: 5px;">
+                        <?php esc_html_e('Enable Research Center Batch Generation', 'aapg'); ?>
+                    </label>
+                    <p class="description" style="margin-top: 5px; margin-left: 25px;">
+                        <?php esc_html_e('If checked, extract RC_IMPORT_PACKET prompts from stub generation and show batch generation interface.', 'aapg'); ?>
+                    </p>
+                </div>
+                
+                <div class="aapg-form-group">
                     <label for="stub_parent_page_id"><?php esc_html_e('Parent Page (optional)', 'aapg'); ?></label>
                     <select id="stub_parent_page_id">
                         <option value="0">No Parent (Top Level)</option>

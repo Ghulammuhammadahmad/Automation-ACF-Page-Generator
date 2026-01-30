@@ -125,6 +125,16 @@
     color: #646970;
     font-size: 13px;
 }
+
+.aapg-form-group label input[type="checkbox"] {
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.aapg-form-group label {
+    font-weight: 600;
+    cursor: pointer;
+}
 .page-content{
     background: #fff;
 }
