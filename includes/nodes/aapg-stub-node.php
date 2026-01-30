@@ -15,6 +15,10 @@ class AAPG_Stub_Node {
     /**
      * Generate page with streaming OpenAI API
      * 
+     * NOTE: This function does NOT save or modify any plugin settings.
+     * It only reads the OpenAI API key from settings and generates a page.
+     * Settings are only modified when user explicitly saves them via the settings form.
+     * 
      * @param int $elementor_template_id Elementor template ID
      * @param string $acf_group_id ACF field group ID
      * @param string $research_trigger_placeholder Research trigger placeholder
@@ -54,22 +58,22 @@ class AAPG_Stub_Node {
             'description' => 'SO MAKE THE RC_IMPORT_PACKET_CORE_V1',
         ];
 
-         $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1'] = [
+        $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1'] = [
             'type' => 'string',
             'description' => 'SO MAKE THE RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1',
         ];
         
-         $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2'] = [
+        $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2'] = [
             'type' => 'string',
             'description' => 'SO MAKE THE RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2',
         ];
 
-         $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3'] = [
+        $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3'] = [
             'type' => 'string',
             'description' => 'SO MAKE THE RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3',
         ];
 
-         $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4'] = [
+        $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4'] = [
             'type' => 'string',
             'description' => 'SO MAKE THE RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4',
         ];
@@ -90,7 +94,10 @@ class AAPG_Stub_Node {
             'description' => 'The URL slug for the generated page (lowercase, hyphens only, no special characters)',
         ];
         
-        // Update required fields
+        // Safer ensure $schema['required'] is an array
+        if (!isset($schema['required']) || !is_array($schema['required'])) {
+            $schema['required'] = [];
+        }
         $schema['required'][] = 'RC_IMPORT_PACKET_CORE_V1';
         $schema['required'][] = 'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1';
         $schema['required'][] = 'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2';
@@ -100,7 +107,7 @@ class AAPG_Stub_Node {
         $schema['required'][] = 'page_title';
         $schema['required'][] = 'page_slug';
 
-        // Get OpenAI API key
+        // Get OpenAI API key from settings (read-only - we do NOT modify settings)
         $settings = get_option(AAPG_OPTION_KEY, []);
         $api_key = $settings['openai_api_key'] ?? '';
         
@@ -110,20 +117,24 @@ class AAPG_Stub_Node {
 
         // Prepare streaming request data with the provided prompt
         $request_data = [
-    'model' => 'gpt-5.2',
-    'stream' => true,
-
-    'text' => [
-        'format' => [
-            'type' => 'json_object'
-        ],
-    ],
-
-    'input' => [
-        [
-            'role' => 'system',
-            'content' =>
-                "You must respond with a single valid JSON object only.
+            'model' => 'gpt-5.2',
+            'stream' => true,
+            'prompt' => [
+                'id' => $prompt_id,
+            ],
+            'reasoning' => [
+                'effort' => 'medium'
+            ],
+            'text' => [
+                'format' => [
+                    'type' => 'json_object'
+                ],
+            ],
+            'input' => [
+                [
+                    'role' => 'system',
+                    'content' =>
+                        "You must respond with a single valid JSON object only.
 Do not include markdown, comments, or explanations.
 Do not wrap the output in code fences.
 
@@ -133,16 +144,18 @@ The JSON must follow this structure exactly:
 All required fields must be present.
 If something is missing or invalid, fix it before finishing.
 The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAKE RESOLUTION TABLE using Full Stack."
-        ],
-        [
-            'role' => 'user',
-            'content' => $prompt
-        ]
-    ]
-];
+                ],
+                [
+                    'role' => 'user',
+                    'content' => $prompt
+                ]
+            ]
+        ];
 
         $streamed_content = '';
         $final_data = null;
+        $debug_last_type = '';
+        $debug_tail = '';
 
         $curl = curl_init();
 
@@ -164,7 +177,7 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
                 'Accept: text/event-stream',
             ],
 
-            CURLOPT_WRITEFUNCTION => function ($curl, $chunk) use (&$streamed_content, &$final_data, $stream_callback) {
+            CURLOPT_WRITEFUNCTION => function ($curl, $chunk) use (&$final_data, $stream_callback, &$debug_last_type, &$debug_tail, &$streamed_content) {
                 static $buffer = '';
                 $buffer .= $chunk;
 
@@ -172,82 +185,80 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
                     $block = substr($buffer, 0, $pos);
                     $buffer = substr($buffer, $pos + 2);
 
-                    $event = null;
-                    $data = '';
-
                     foreach (explode("\n", $block) as $line) {
                         $line = trim($line);
 
-                        if (strpos($line, 'event:') === 0) {
-                            $event = trim(substr($line, 6));
+                        if (strpos($line, 'data:') !== 0) {
                             continue;
                         }
 
-                        if (strpos($line, 'data:') === 0) {
-                            $data .= trim(substr($line, 5));
+                        $json = trim(substr($line, 5));
+
+                        if ($json === '' || $json === '[DONE]') {
                             continue;
                         }
-                    }
 
-                    if ($data === '' || $data === '[DONE]') {
-                        continue;
-                    }
-
-                    $decoded = json_decode($data, true);
-                    if (!is_array($decoded)) {
-                        continue;
-                    }
-
-                    if ($event === 'response.output_text.delta' && !empty($decoded['delta'])) {
-                        $streamed_content .= $decoded['delta'];
-                        if (is_callable($stream_callback)) {
-                            call_user_func($stream_callback, 'delta', ['delta' => $decoded['delta']]);
+                        $decoded = json_decode($json, true);
+                        if (!is_array($decoded)) {
+                            continue;
                         }
-                    }
 
-                    if ($event === 'response.error') {
-                        if (!empty($decoded['error']['message'])) {
-                            $streamed_content .= "\n" . $decoded['error']['message'];
+                        $type = $decoded['type'] ?? '';
+                        if ($type !== '') {
+                            $debug_last_type = $type;
+                        }
+
+                        if ($type === 'response.output_text.delta') {
+                            $delta = $decoded['delta'] ?? '';
+                            if (is_string($delta) && $delta !== '') {
+                                $streamed_content .= $delta;
+                                $debug_tail = substr($streamed_content, -400);
+                            }
                             if (is_callable($stream_callback)) {
-                                call_user_func($stream_callback, 'error', ['message' => $decoded['error']['message']]);
-                            }
-                        }
-                    }
-
-                    if ($event === 'response.completed') {
-                        if (!empty($decoded['output'])) {
-                            foreach ($decoded['output'] as $item) {
-                                if (($item['type'] ?? '') !== 'message' || empty($item['content'])) {
-                                    continue;
-                                }
-
-                                foreach ($item['content'] as $content) {
-                                    if (($content['type'] ?? '') !== 'output_text' || empty($content['text'])) {
-                                        continue;
-                                    }
-
-                                    $parsed = json_decode($content['text'], true);
-                                    if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
-                                        $final_data = $parsed;
-                                        if (is_callable($stream_callback)) {
-                                            call_user_func($stream_callback, 'completed', ['final_data' => $final_data]);
-                                        }
-                                        break 2;
-                                    }
-                                }
+                                call_user_func($stream_callback, 'delta', ['delta' => is_string($delta) ? $delta : '']);
                             }
                         }
 
-                        if (!$final_data) {
-                            $m = null;
-                            if (preg_match('/\{.*\}/s', $streamed_content, $m)) {
-                                $parsed = json_decode($m[0], true);
-                                if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
-                                    $final_data = $parsed;
-                                    if (is_callable($stream_callback)) {
-                                        call_user_func($stream_callback, 'completed', ['final_data' => $final_data]);
-                                    }
+                        if ($type === 'response.error') {
+                            $msg = $decoded['error']['message'] ?? '';
+                            if (is_string($msg) && $msg !== '' && is_callable($stream_callback)) {
+                                call_user_func($stream_callback, 'error', ['message' => $msg]);
+                            }
+                        }
+
+                        if ($type === 'response.completed') {
+                            $resp = $decoded['response'] ?? $decoded;
+
+                            // 1) Get the full final output from the completed payload
+                            $final_text = '';
+                            if (is_array($resp)) {
+                                $final_text = self::extract_response_output_text($resp);
+                            }
+
+                            // 2) Fallback: if completed payload doesn't contain it, use accumulated deltas
+                            if (!is_string($final_text) || trim($final_text) === '') {
+                                $final_text = $streamed_content;
+                            }
+
+                            $debug_tail = substr($final_text, -400);
+
+                            // 3) Parse as JSON (robust)
+                            $parsed = self::parse_json_loose($final_text);
+                            if (is_array($parsed)) {
+                                $final_data = $parsed;
+                            } else {
+                                // Keep the raw text so you can inspect it instead of losing it
+                                $final_data = null;
+                                if (is_callable($stream_callback)) {
+                                    call_user_func($stream_callback, 'error', [
+                                        'message' => 'Completed received, but JSON parsing failed',
+                                        'tail' => $debug_tail,
+                                    ]);
                                 }
+                            }
+
+                            if (is_callable($stream_callback)) {
+                                call_user_func($stream_callback, 'completed', ['final_data' => $final_data]);
                             }
                         }
                     }
@@ -267,7 +278,14 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
         curl_close($curl);
 
         if (!$final_data) {
-            return new \WP_Error('no_valid_json', 'No valid JSON received from OpenAI stream');
+            $msg = 'No valid JSON received from OpenAI stream.';
+            if ($debug_last_type !== '') {
+                $msg .= ' Last type: ' . $debug_last_type . '.';
+            }
+            if ($debug_tail !== '') {
+                $msg .= ' Tail: ' . $debug_tail;
+            }
+            return new \WP_Error('no_valid_json', $msg);
         }
 
         // Prepare page creation arguments
@@ -362,6 +380,68 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
                 'ai_generated_slug' => $generated_slug
             ]
         ];
+    }
+
+    /**
+     * Extract final output text from a Responses API payload (handles multiple shapes).
+     */
+    private static function extract_response_output_text(array $resp): string {
+        // Best-case shortcut
+        if (isset($resp['output_text']) && is_string($resp['output_text'])) {
+            return $resp['output_text'];
+        }
+
+        $out = '';
+
+        // Typical: resp.output[*].content[*].text
+        if (isset($resp['output']) && is_array($resp['output'])) {
+            foreach ($resp['output'] as $item) {
+                if (!is_array($item)) continue;
+
+                if (isset($item['content']) && is_array($item['content'])) {
+                    foreach ($item['content'] as $c) {
+                        if (!is_array($c)) continue;
+                        if (isset($c['text']) && is_string($c['text'])) {
+                            $out .= $c['text'];
+                        }
+                    }
+                }
+
+                // Some variants: item.text directly
+                if (isset($item['text']) && is_string($item['text'])) {
+                    $out .= $item['text'];
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Try to parse JSON robustly. If there is leading/trailing junk, crop to first { and last }.
+     */
+    private static function parse_json_loose(string $text) {
+        $text = trim($text);
+        if ($text === '') return null;
+
+        $parsed = json_decode($text, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($parsed)) {
+            return $parsed;
+        }
+
+        // Try crop to a JSON object region
+        $start = strpos($text, '{');
+        $end   = strrpos($text, '}');
+
+        if ($start !== false && $end !== false && $end > $start) {
+            $slice = substr($text, $start, $end - $start + 1);
+            $parsed2 = json_decode($slice, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($parsed2)) {
+                return $parsed2;
+            }
+        }
+
+        return null;
     }
 
     /**

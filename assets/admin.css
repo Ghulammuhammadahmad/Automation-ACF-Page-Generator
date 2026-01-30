@@ -32,6 +32,62 @@
     margin-bottom: 15px;
 }
 
+/* Collapsible section styles */
+.aapg-section-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    margin: -10px 0 15px 0;
+    border-bottom: 1px solid #dcdcde;
+    transition: color 0.2s ease;
+}
+
+.aapg-section-header:hover {
+    color: #2271b1;
+}
+
+.aapg-section-header h3 {
+    margin: 0;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.aapg-section-toggle {
+    font-size: 16px;
+    color: #646970;
+    transition: transform 0.3s ease, color 0.2s ease;
+    margin-left: 10px;
+}
+
+.aapg-section-header:hover .aapg-section-toggle {
+    color: #2271b1;
+}
+
+.aapg-section.collapsed .aapg-section-toggle {
+    transform: rotate(-90deg);
+}
+
+.aapg-section-content {
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease, padding 0.3s ease;
+    max-height: 10000px;
+    opacity: 1;
+}
+
+.aapg-section.collapsed .aapg-section-content {
+    max-height: 0;
+    opacity: 0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+
 .aapg-form-group {
     margin-bottom: 20px;
 }
@@ -227,4 +283,17 @@
 .aapg-no-parent {
     color: #646970;
     font-style: italic;
+}
+
+/* Spinning animation for generating state */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.dashicons-update {
+    animation: spin 1s linear infinite;
+}
+.aapg-generated-list table tbody tr td:first-child{
+    width:30% !important; 
 }

@@ -1,5 +1,15 @@
 jQuery(document).ready(function ($) {
 
+    // Collapsible sections functionality
+    $(document).on('click', '.aapg-section-header', function () {
+        var $section = $(this).closest('.aapg-section');
+        // Don't toggle if section is hidden (like research-center-batch when not shown)
+        if ($section.css('display') === 'none') {
+            return;
+        }
+        $section.toggleClass('collapsed');
+    });
+
     $('#aapg-save-hub-maker-settings-btn').on('click', function (e) {
         e.preventDefault();
 
@@ -52,7 +62,7 @@ jQuery(document).ready(function ($) {
             elementor_template_id: $('#stub_elementor_template_id').val(),
             acf_group_id: $('#stub_acf_group_id').val(),
             prompt_id: $('#stub_prompt_id').val(),
-            prompt: $('#stub_library').val() + " " + $('#stub_prompt').val(),
+            prompt: $('#stub_prompt').val(),
             parent_page_id: $('#stub_parent_page_id').val(),
         };
 
@@ -274,7 +284,7 @@ jQuery(document).ready(function ($) {
                     $originalBtn.closest('tr').find('.aapg-status-badge')
                         .removeClass('status-draft')
                         .addClass('status-publish')
-                        .text('Publish');
+                        .text('Published');
                     $originalBtn.remove();
                     
                     // Auto-dismiss the notice after 5 seconds
@@ -459,7 +469,6 @@ jQuery(document).ready(function ($) {
         var $contentBox = $('#aapg-stub-content');
 
         var elementorTemplateId = $('#stub_elementor_template_id').val().trim();
-        var library = $('#stub_library').val().trim();
         var acfGroupId = $('#stub_acf_group_id').val().trim();
         var promptId = $('#stub_prompt_id').val().trim();
         var prompt = $('#stub_prompt').val().trim();
@@ -484,8 +493,8 @@ jQuery(document).ready(function ($) {
         }
         $liveBox.text('');
 
-        // Build prompt as you currently want: library + prompt
-        var combinedPrompt = (library ? (library + ' ') : '') + prompt;
+        // Use prompt directly (library field removed)
+        var combinedPrompt = prompt;
 
         fetch(aapgAjax.ajaxUrl, {
             method: 'POST',
@@ -558,6 +567,55 @@ jQuery(document).ready(function ($) {
                     html += '</div>';
 
                     $result.html(html).show();
+
+                    // Extract RC_IMPORT_PACKET fields for batch generation
+                    var batchPrompts = [];
+                    var rcFields = [
+                        'RC_IMPORT_PACKET_CORE_V1',
+                        'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1',
+                        'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2',
+                        'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3',
+                        'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4'
+                    ];
+
+                    rcFields.forEach(function(fieldKey) {
+                        if (data[fieldKey] && data[fieldKey].trim() !== '') {
+                            batchPrompts.push({
+                                key: fieldKey,
+                                value: data[fieldKey].trim()
+                            });
+                        }
+                    });
+
+                    // Set up batch generation if we have prompts
+                    if (batchPrompts.length > 0) {
+                        window.aapgBatchPrompts = batchPrompts;
+                        batchCreatedArticles = []; // Reset articles list
+                        
+                        // Display prompts in the batch UI with better formatting
+                        var promptsHtml = '<div style="max-height: 200px; overflow-y: auto;">';
+                        promptsHtml += '<table class="widefat" style="margin: 0; border-collapse: collapse;">';
+                        promptsHtml += '<thead><tr style="background: #f5f5f5;"><th style="padding: 8px; text-align: left; border-bottom: 1px solid #ddd;">Prompt Key</th><th style="padding: 8px; text-align: left; border-bottom: 1px solid #ddd;">Prompt Preview</th></tr></thead>';
+                        promptsHtml += '<tbody>';
+                        batchPrompts.forEach(function(item, index) {
+                            promptsHtml += '<tr' + (index % 2 === 0 ? ' style="background: #fafafa;"' : '') + '>';
+                            promptsHtml += '<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>' + item.key + '</strong></td>';
+                            promptsHtml += '<td style="padding: 8px; border-bottom: 1px solid #eee; color: #555;">' + 
+                                (item.value.length > 150 ? item.value.substring(0, 150) + '...' : item.value) + 
+                                '</td>';
+                            promptsHtml += '</tr>';
+                        });
+                        promptsHtml += '</tbody></table></div>';
+                        
+                        $('#aapg-research-center-prompts').html(promptsHtml);
+                        $('#aapg-batch-articles-list').html('<p style="color: #666; font-style: italic;">No articles created yet. Click "Start Making Research Articles" to begin.</p>');
+                        $('#aapg-start-batch-btn').prop('disabled', false);
+                        $('#aapg-abort-batch-btn').prop('disabled', true);
+                        $('#aapg-research-center-batch').show();
+                    } else {
+                        $('#aapg-research-center-batch').hide();
+                        window.aapgBatchPrompts = [];
+                    }
                 }
             }
 
@@ -583,6 +641,38 @@ jQuery(document).ready(function ($) {
             $result.html('<div style="color: red;">Stream Request Failed: ' + err.message + '</div>').show();
         }).finally(function () {
             $btn.prop('disabled', false).text('Generate Page with Stub Node');
+        });
+    });
+
+    $('#aapg-save-research-settings-btn').on('click', function () {
+        var $btn = $(this);
+        var postType = $('#research_post_type').val();
+        var promptId = $('#research_prompt_id').val().trim();
+        var prompt = $('#research_prompt').val().trim();
+
+        if (!postType || !promptId || !prompt) {
+            alert('Please fill in Target Post Type, Prompt ID, and Prompt Content before saving.');
+            return;
+        }
+
+        $btn.prop('disabled', true).text('Saving...');
+
+        $.post(aapgAjax.ajaxUrl, {
+            action: 'aapg_save_research_settings',
+            nonce: aapgAjax.nonce,
+            research_post_type: postType,
+            research_prompt_id: promptId,
+            research_prompt: prompt
+        }, function (response) {
+            if (response.success) {
+                alert('Research settings saved successfully!');
+            } else {
+                alert('Error saving research settings: ' + (response.data.message || 'Unknown error'));
+            }
+        }, 'json').fail(function () {
+            alert('Request failed while saving research settings.');
+        }).always(function () {
+            $btn.prop('disabled', false).text('Save Research Settings');
         });
     });
 
@@ -720,6 +810,269 @@ jQuery(document).ready(function ($) {
         }).finally(function () {
             $btn.prop('disabled', false).text('Generate Research (Streaming)');
         });
+    });
+
+    // Research Center Batch Generation
+    var batchRunning = false;
+    var batchAbort = false;
+    var batchIndex = 0;
+    var batchCreatedArticles = [];
+
+    $('#aapg-start-batch-btn').on('click', function () {
+        if (!window.aapgBatchPrompts || !window.aapgBatchPrompts.length) {
+            alert('No batch prompts available. Please generate a stub page first.');
+            return;
+        }
+        
+        var postType = $('#research_post_type').val();
+        var promptId = $('#research_prompt_id').val().trim();
+        
+        if (!postType) {
+            alert('Please select a Target Post Type in the Research Maker section before starting batch generation.');
+            return;
+        }
+        
+        if (!promptId) {
+            alert('Please enter a Prompt ID in the Research Maker section before starting batch generation.');
+            return;
+        }
+        
+        batchRunning = true;
+        batchAbort = false;
+        batchIndex = 0;
+        batchCreatedArticles = [];
+        $('#aapg-batch-progress').show();
+        $('#aapg-batch-log').text('=== Starting Batch Generation ===\nTotal prompts: ' + window.aapgBatchPrompts.length + '\n');
+        $('#aapg-batch-articles-list').html('<p style="color: #666; font-style: italic;">Generating articles... Please wait.</p>');
+        
+        // Update start button to show generating state
+        var $startBtn = $('#aapg-start-batch-btn');
+        // Store original HTML if not already stored
+        if (!$startBtn.data('original-html')) {
+            $startBtn.data('original-html', $startBtn.html());
+        }
+        $startBtn.prop('disabled', true).html('<span class="dashicons dashicons-update" style="animation: spin 1s linear infinite; vertical-align: middle;"></span> Generating...');
+        $('#aapg-abort-batch-btn').prop('disabled', true);
+
+        function log(msg) {
+            var $log = $('#aapg-batch-log');
+            $log.append(msg + '\n');
+            $log.scrollTop($log[0].scrollHeight);
+        }
+
+        function updateArticlesList() {
+            var $list = $('#aapg-batch-articles-list');
+            if (batchCreatedArticles.length === 0) {
+                if (batchRunning) {
+                    $list.html('<p style="color: #666; font-style: italic;">Generating articles... Please wait.</p>');
+                } else {
+                    $list.html('<p style="color: #666; font-style: italic;">No articles created yet. Click "Start Making Research Articles" to begin.</p>');
+                }
+                return;
+            }
+            
+            var html = '<div style="margin-top: 15px;">';
+            html += '<h5 style="margin-bottom: 10px; color: #0073aa; font-size: 14px;">';
+            html += '<span class="dashicons dashicons-yes-alt" style="color: #46b450; vertical-align: middle;"></span> ';
+            html += 'Created Articles (' + batchCreatedArticles.length + '/' + window.aapgBatchPrompts.length + '):';
+            html += '</h5>';
+            html += '<div style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; background: #fff; padding: 0; border-radius: 3px;">';
+            html += '<table class="widefat" style="margin: 0; border-collapse: collapse;">';
+            html += '<thead><tr style="background: #f5f5f5;"><th style="width: 40px; padding: 10px; text-align: center; border-bottom: 1px solid #ddd;">#</th><th style="padding: 10px; text-align: left; border-bottom: 1px solid #ddd;">Title</th><th style="width: 80px; padding: 10px; text-align: center; border-bottom: 1px solid #ddd;">ID</th><th style="width: 150px; padding: 10px; text-align: center; border-bottom: 1px solid #ddd;">Actions</th></tr></thead>';
+            html += '<tbody>';
+            
+            batchCreatedArticles.forEach(function(article, index) {
+                var rowBg = index % 2 === 0 ? 'background: #fafafa;' : '';
+                html += '<tr style="' + rowBg + '">';
+                html += '<td style="padding: 10px; text-align: center; border-bottom: 1px solid #eee; color: #666;">' + (index + 1) + '</td>';
+                html += '<td style="padding: 10px; border-bottom: 1px solid #eee;">';
+                html += '<strong style="color: #23282d; display: block; margin-bottom: 3px;">' + article.title + '</strong>';
+                html += '<small style="color: #666; font-size: 11px;">' + article.key + '</small>';
+                html += '</td>';
+                html += '<td style="padding: 10px; text-align: center; border-bottom: 1px solid #eee; color: #666;">' + article.id + '</td>';
+                html += '<td style="padding: 10px; text-align: center; border-bottom: 1px solid #eee;">';
+                if (article.url && article.url !== '#') {
+                    // Get admin URL base
+                    var adminBase = aapgAjax.ajaxUrl.replace('/admin-ajax.php', '');
+                    var editUrl = adminBase + '/post.php?post=' + article.id + '&action=edit';
+                    html += '<a href="' + article.url + '" target="_blank" class="button button-small" style="margin-right: 5px; text-decoration: none;">View</a>';
+                    html += '<a href="' + editUrl + '" target="_blank" class="button button-small" style="text-decoration: none;">Edit</a>';
+                } else {
+                    html += '<span style="color: #999;">—</span>';
+                }
+                html += '</td>';
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table></div></div>';
+            $list.html(html);
+        }
+
+        function runNext() {
+            if (batchAbort || !batchRunning) {
+                log('\n=== BATCH ABORTED ===');
+                log('Processed: ' + batchIndex + '/' + window.aapgBatchPrompts.length);
+                log('Successfully created: ' + batchCreatedArticles.length + ' articles');
+                batchRunning = false;
+                
+                // Reset start button
+                var $startBtn = $('#aapg-start-batch-btn');
+                var originalHtml = $startBtn.data('original-html') || '<span class="dashicons dashicons-controls-play" style="vertical-align: middle;"></span> Start Making Research Articles';
+                $startBtn.prop('disabled', false).html(originalHtml);
+                $('#aapg-abort-batch-btn').prop('disabled', true);
+                
+                // Hide the batch container
+                $('#aapg-research-center-batch').slideUp(300);
+                
+                updateArticlesList();
+                return;
+            }
+            if (batchIndex >= window.aapgBatchPrompts.length) {
+                log('\n=== BATCH COMPLETED SUCCESSFULLY ===');
+                log('Total prompts processed: ' + window.aapgBatchPrompts.length);
+                log('Total articles created: ' + batchCreatedArticles.length);
+                if (batchCreatedArticles.length > 0) {
+                    log('\nCreated articles:');
+                    batchCreatedArticles.forEach(function(article, idx) {
+                        log('  ' + (idx + 1) + '. ' + article.title + ' (ID: ' + article.id + ')');
+                    });
+                }
+                batchRunning = false;
+                
+                // Reset start button
+                var $startBtn = $('#aapg-start-batch-btn');
+                var originalHtml = $startBtn.data('original-html') || '<span class="dashicons dashicons-controls-play" style="vertical-align: middle;"></span> Start Making Research Articles';
+                $startBtn.prop('disabled', false).html(originalHtml);
+                $('#aapg-abort-batch-btn').prop('disabled', true);
+                
+                updateArticlesList();
+                return;
+            }
+            var item = window.aapgBatchPrompts[batchIndex];
+            var idx = batchIndex + 1;
+            var progressPercent = Math.round((idx / window.aapgBatchPrompts.length) * 100);
+            log('\n--- [' + idx + '/' + window.aapgBatchPrompts.length + '] (' + progressPercent + '%) Processing: ' + item.key + ' ---');
+            log('Prompt: ' + (item.value.length > 100 ? item.value.substring(0, 100) + '...' : item.value));
+            log('Status: Generating...');
+            
+            // Enable abort button once processing starts
+            if (batchIndex === 0) {
+                $('#aapg-abort-batch-btn').prop('disabled', false);
+            }
+
+            // Use the Research Maker AJAX endpoint
+            fetch(aapgAjax.ajaxUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                body: $.param({
+                    action: 'aapg_research_generate_stream',
+                    nonce: aapgAjax.nonce,
+                    post_type: $('#research_post_type').val() || 'post',
+                    prompt_id: $('#research_prompt_id').val().trim() || 'research_batch_' + Date.now(),
+                    prompt: item.value
+                })
+            }).then(function (resp) {
+                if (!resp.ok) {
+                    throw new Error('HTTP ' + resp.status);
+                }
+                var reader = resp.body.getReader();
+                var decoder = new TextDecoder('utf-8');
+                var buffer = '';
+                var currentEvent = null;
+                var currentData = '';
+
+                function handleSseBlock(block) {
+                    currentEvent = null;
+                    currentData = '';
+                    block.split('\n').forEach(function (line) {
+                        line = line.trim();
+                        if (line.indexOf('event:') === 0) {
+                            currentEvent = line.substring(6).trim();
+                        } else if (line.indexOf('data:') === 0) {
+                            currentData += line.substring(5).trim();
+                        }
+                    });
+                    if (!currentEvent || !currentData) return;
+                    var parsed;
+                    try {
+                        parsed = JSON.parse(currentData);
+                    } catch (e) { return; }
+
+                    if (currentEvent === 'delta' && parsed.delta) {
+                        // Don't log every delta to reduce noise
+                    }
+                    if (currentEvent === 'error') {
+                        log('❌ ERROR: ' + (parsed.message || 'Stream error'));
+                        log('Failed to create article for: ' + item.key);
+                    }
+                    if (currentEvent === 'result') {
+                        var articleTitle = parsed.post_title || 'Untitled';
+                        var articleId = parsed.post_id || 'N/A';
+                        var articleUrl = parsed.post_url || '#';
+                        
+                        log('✅ Success! Article created: ' + articleTitle);
+                        log('   ID: ' + articleId + ' | URL: ' + articleUrl);
+                        
+                        // Store created article
+                        batchCreatedArticles.push({
+                            key: item.key,
+                            title: articleTitle,
+                            id: articleId,
+                            url: articleUrl,
+                            prompt: item.value
+                        });
+                        
+                        // Update articles list in real-time
+                        updateArticlesList();
+                    }
+                }
+
+                function pump() {
+                    return reader.read().then(function (res) {
+                        if (res.done) {
+                            batchIndex++;
+                            setTimeout(runNext, 500); // small delay between requests
+                            return;
+                        }
+                        buffer += decoder.decode(res.value, { stream: true });
+                        var idx2;
+                        while ((idx2 = buffer.indexOf('\n\n')) !== -1) {
+                            var block = buffer.slice(0, idx2);
+                            buffer = buffer.slice(idx2 + 2);
+                            handleSseBlock(block);
+                        }
+                        return pump();
+                    });
+                }
+                return pump();
+            }).catch(function (err) {
+                log('❌ REQUEST FAILED: ' + err.message);
+                log('Failed to create article for: ' + item.key);
+                batchIndex++;
+                setTimeout(runNext, 500);
+            });
+        }
+
+        runNext();
+    });
+
+    // Initialize abort button as disabled on page load
+    $('#aapg-abort-batch-btn').prop('disabled', true);
+
+    $('#aapg-abort-batch-btn').on('click', function () {
+        if (!batchRunning) {
+            // If not running, just hide the container
+            $('#aapg-research-center-batch').slideUp(300);
+            return;
+        }
+        if (!confirm('Are you sure you want to abort the batch generation? Current item will finish, then batch will stop.')) {
+            return;
+        }
+        batchAbort = true;
+        $('#aapg-abort-batch-btn').prop('disabled', true);
+        $('#aapg-batch-log').append('\n--- Abort requested. Finishing current item... ---\n');
+        
+        // Note: The container will be hidden in runNext() when batchAbort is processed
     });
 
 });

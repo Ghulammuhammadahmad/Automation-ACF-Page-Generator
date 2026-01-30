@@ -33,6 +33,7 @@ final class Plugin {
         add_action('wp_ajax_aapg_generate_page', [$this, 'ajax_generate_page']);
         add_action('wp_ajax_aapg_save_hub_maker_settings', [$this, 'ajax_save_hub_maker_settings']);
         add_action('wp_ajax_aapg_save_stub_maker_settings', [$this, 'ajax_save_stub_maker_settings']);
+        add_action('wp_ajax_aapg_save_research_settings', [$this, 'ajax_save_research_settings']);
         add_action('wp_ajax_aapg_publish_page', [$this, 'ajax_publish_page']);
         add_action('wp_ajax_aapg_test_stream', [$this, 'ajax_test_stream']);
         add_action('wp_ajax_aapg_test_image', [$this, 'ajax_test_image']);
@@ -77,7 +78,8 @@ final class Plugin {
         $elementor_template_id = absint($_POST['elementor_template_id'] ?? 0);
         $acf_group_id = sanitize_text_field($_POST['acf_group_id'] ?? '');
         $prompt_id = sanitize_text_field($_POST['prompt_id'] ?? '');
-        $prompt = sanitize_textarea_field($_POST['prompt'] ?? '');
+        // Unslash first to prevent double-escaping, then sanitize
+        $prompt = sanitize_textarea_field(wp_unslash($_POST['prompt'] ?? ''));
         $library = sanitize_text_field($_POST['library'] ?? '');
         $parent_page_id = absint($_POST['parent_page_id'] ?? 0);
 
@@ -184,11 +186,15 @@ final class Plugin {
                     'default_elementor_template' => isset($value['default_elementor_template']) ? intval($value['default_elementor_template']) : 0,
                     'default_acf_group' => isset($value['default_acf_group']) ? sanitize_text_field($value['default_acf_group']) : '',
                     'default_prompt_id' => isset($value['default_prompt_id']) ? sanitize_text_field($value['default_prompt_id']) : '',
-                    'default_prompt' => isset($value['default_prompt']) ? sanitize_textarea_field($value['default_prompt']) : '',
-                    'default_research_trigger' => isset($value['default_research_trigger']) ? sanitize_textarea_field($value['default_research_trigger']) : '',
-                    'default_seo_master_trigger' => isset($value['default_seo_master_trigger']) ? sanitize_textarea_field($value['default_seo_master_trigger']) : '',
-                    'stub_maker_default_library' => isset($value['stub_maker_default_library']) ? sanitize_textarea_field($value['stub_maker_default_library']) : '',
+                    'default_prompt' => isset($value['default_prompt']) ? sanitize_textarea_field(wp_unslash($value['default_prompt'])) : '',
+                    'default_research_trigger' => isset($value['default_research_trigger']) ? sanitize_textarea_field(wp_unslash($value['default_research_trigger'])) : '',
+                    'default_seo_master_trigger' => isset($value['default_seo_master_trigger']) ? sanitize_textarea_field(wp_unslash($value['default_seo_master_trigger'])) : '',
+                    'stub_maker_default_library' => isset($value['stub_maker_default_library']) ? sanitize_textarea_field(wp_unslash($value['stub_maker_default_library'])) : '',
                     'stub_maker_default_parent_page_id' => isset($value['stub_maker_default_parent_page_id']) ? intval($value['stub_maker_default_parent_page_id']) : 0,
+                    // Research maker defaults
+                    'default_research_post_type' => isset($value['default_research_post_type']) ? sanitize_text_field($value['default_research_post_type']) : '',
+                    'default_research_prompt_id' => isset($value['default_research_prompt_id']) ? sanitize_text_field($value['default_research_prompt_id']) : '',
+                    'default_research_prompt' => isset($value['default_research_prompt']) ? sanitize_textarea_field(wp_unslash($value['default_research_prompt'])) : '',
                 ];
             },
             'default' => [ 
@@ -206,6 +212,10 @@ final class Plugin {
                 'default_seo_master_trigger' => '',
                 'stub_maker_default_library' => '',
                 'stub_maker_default_parent_page_id' => 0,
+                // Research maker defaults
+                'default_research_post_type' => '',
+                'default_research_prompt_id' => '',
+                'default_research_prompt' => '',
             ],
         ]);
 
@@ -332,43 +342,47 @@ final class Plugin {
             wp_send_json_error(['message' => __('Permission denied.', 'aapg')]);
         }
 
-        $page_id = absint($_POST['page_id'] ?? 0);
+        $post_id = absint($_POST['page_id'] ?? 0);
 
-        if (!$page_id) {
-            wp_send_json_error(['message' => __('Invalid page ID.', 'aapg')]);
+        if (!$post_id) {
+            wp_send_json_error(['message' => __('Invalid post ID.', 'aapg')]);
         }
 
-        // Verify this is a generated page
-        $is_generated = get_post_meta($page_id, 'isGeneratedByAutomation', true);
+        // Verify this is a generated post/page
+        $is_generated = get_post_meta($post_id, 'isGeneratedByAutomation', true);
         if ($is_generated !== 'true') {
-            wp_send_json_error(['message' => __('This page was not generated by automation.', 'aapg')]);
+            wp_send_json_error(['message' => __('This content was not generated by automation.', 'aapg')]);
         }
 
-        // Check if page exists
-        $page = get_post($page_id);
-        if (!$page || $page->post_type !== 'page') {
-            wp_send_json_error(['message' => __('Page not found.', 'aapg')]);
+        // Check if post exists
+        $post = get_post($post_id);
+        if (!$post) {
+            wp_send_json_error(['message' => __('Post not found.', 'aapg')]);
         }
+
+        // Get post type label for messages
+        $post_type_obj = get_post_type_object($post->post_type);
+        $post_type_label = $post_type_obj ? $post_type_obj->labels->singular_name : $post->post_type;
 
         // Check if already published
-        if ($page->post_status === 'publish') {
-            wp_send_json_error(['message' => __('Page is already published.', 'aapg')]);
+        if ($post->post_status === 'publish') {
+            wp_send_json_error(['message' => sprintf(__('%s is already published.', 'aapg'), $post_type_label)]);
         }
 
-        // Publish the page
+        // Publish the post/page
         $result = wp_update_post([
-            'ID' => $page_id,
+            'ID' => $post_id,
             'post_status' => 'publish'
         ], true);
 
         if (is_wp_error($result)) {
-            wp_send_json_error(['message' => __('Failed to publish page: ', 'aapg') . $result->get_error_message()]);
+            wp_send_json_error(['message' => sprintf(__('Failed to publish %s: ', 'aapg'), strtolower($post_type_label)) . $result->get_error_message()]);
         }
 
         wp_send_json_success([
-            'message' => __('Page published successfully!', 'aapg'),
-            'view_url' => get_permalink($page_id),
-            'edit_url' => get_edit_post_link($page_id)
+            'message' => sprintf(__('%s published successfully!', 'aapg'), $post_type_label),
+            'view_url' => get_permalink($post_id),
+            'edit_url' => get_edit_post_link($post_id)
         ]);
     }
 
@@ -579,6 +593,11 @@ final class Plugin {
         wp_send_json_success(['image_url' => $result]);
     }
 
+    /**
+     * AJAX handler for stub node generation (non-streaming)
+     * NOTE: This function does NOT save any settings - it only generates pages.
+     * Settings are only saved when user explicitly clicks "Save Stub Maker Settings" button.
+     */
     public function ajax_stub_node_generate(): void {
         check_ajax_referer('aapg_generate_nonce', 'nonce');
 
@@ -603,6 +622,7 @@ final class Plugin {
         // Include the stub node
         require_once AAPG_PLUGIN_DIR . 'includes/nodes/aapg-stub-node.php';
 
+        // Generate page - this does NOT modify any settings
         $result = \AAPG\Nodes\AAPG_Stub_Node::generate_page_with_streaming(
             $elementor_template_id,
             $acf_group_id,
@@ -621,6 +641,53 @@ final class Plugin {
         wp_send_json_success($result);
     }
 
+    public function ajax_save_research_settings(): void {
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'aapg')]);
+        }
+
+        $post_type = sanitize_text_field($_POST['research_post_type'] ?? '');
+        $prompt_id = sanitize_text_field($_POST['research_prompt_id'] ?? '');
+        // Unslash first to prevent double-escaping, then sanitize
+        $prompt = sanitize_textarea_field(wp_unslash($_POST['research_prompt'] ?? ''));
+
+        // Get existing settings and ensure it's an array
+        $existing = get_option(AAPG_OPTION_KEY, []);
+        if (!is_array($existing)) {
+            $existing = [];
+        }
+
+        // Merge new research settings with existing settings
+        $updated = array_merge($existing, [
+            'default_research_post_type' => $post_type,
+            'default_research_prompt_id' => $prompt_id,
+            'default_research_prompt' => $prompt,
+        ]);
+
+        // Save settings
+        $result = update_option(AAPG_OPTION_KEY, $updated, false);
+        
+        if ($result === false) {
+            wp_send_json_error(['message' => __('Failed to save research settings.', 'aapg')]);
+        }
+
+        wp_send_json_success([
+            'message' => __('Research settings saved.', 'aapg'),
+            'saved_settings' => [
+                'post_type' => $post_type,
+                'prompt_id' => $prompt_id,
+                'prompt' => $prompt
+            ]
+        ]);
+    }
+
+    /**
+     * AJAX handler for stub node generation (streaming)
+     * NOTE: This function does NOT save any settings - it only generates pages.
+     * Settings are only saved when user explicitly clicks "Save Stub Maker Settings" button.
+     */
     public function ajax_stub_node_generate_stream(): void {
         check_ajax_referer('aapg_generate_nonce', 'nonce');
 
@@ -659,6 +726,8 @@ final class Plugin {
         }
 
         require_once AAPG_PLUGIN_DIR . 'includes/nodes/aapg-stub-node.php';
+
+        // Generate page - this does NOT modify any settings
 
         $stream_callback = function(string $type, array $payload) {
             if ($type === 'delta' && !empty($payload['delta'])) {
@@ -1063,6 +1132,17 @@ final class Plugin {
         $parent_pages = get_pages(['sort_column' => 'post_title', 'sort_order' => 'ASC', 'post_status' => 'publish']);
         $form_values = get_option('aapg_form_values', []);
         $settings = get_option(AAPG_OPTION_KEY, []);
+        // Ensure settings is an array
+        if (!is_array($settings)) {
+            $settings = [];
+        }
+        // Unslash textarea fields to prevent double-escaping
+        if (isset($settings['default_prompt'])) {
+            $settings['default_prompt'] = wp_unslash($settings['default_prompt']);
+        }
+        if (isset($settings['default_research_prompt'])) {
+            $settings['default_research_prompt'] = wp_unslash($settings['default_research_prompt']);
+        }
         $generated_pages = $this->get_generated_pages();
 
         ob_start();
@@ -1070,8 +1150,12 @@ final class Plugin {
         <div class="aapg-generator-wrap">
             <h2><?php esc_html_e('Generate Page', 'aapg'); ?></h2>
 
-            <form id="aapg-generate-form" class="aapg-section" style="display:none;">
-                <h3><?php esc_html_e('Hub Maker', 'aapg'); ?></h3>
+            <form id="aapg-generate-form" class="aapg-section">
+                <div class="aapg-section-header">
+                    <h3><?php esc_html_e('Hub Maker', 'aapg'); ?></h3>
+                    <span class="dashicons dashicons-arrow-down-alt2 aapg-section-toggle"></span>
+                </div>
+                <div class="aapg-section-content">
                 
                 <div class="aapg-form-group">
                     <label for="acf_field_group_key"><?php esc_html_e('ACF Field Group', 'aapg'); ?></label>
@@ -1132,16 +1216,22 @@ final class Plugin {
                     <button type="button" class="button button-secondary" id="aapg-save-hub-maker-settings-btn"><?php esc_html_e('Save Hub Maker Settings', 'aapg'); ?></button>
                     <button type="submit" class="button button-primary" id="aapg-generate-btn"><?php esc_html_e('Generate Page', 'aapg'); ?></button>
                 </p>
+                </div>
             </form>
 
             <div id="aapg-progress" style="display:none;">
                 <div id="aapg-progress-text"></div>
             </div>
             <div id="aapg-result" style="display:none;"></div>
+            <hr style="margin: 30px 0;">
 
             <!-- Stub Node Test Section -->
             <div class="aapg-section">
-                <h3><?php esc_html_e('Stub Generation', 'aapg'); ?></h3>
+                <div class="aapg-section-header">
+                    <h3><?php esc_html_e('Stub Generation', 'aapg'); ?></h3>
+                    <span class="dashicons dashicons-arrow-down-alt2 aapg-section-toggle"></span>
+                </div>
+                <div class="aapg-section-content">
                 <div class="aapg-form-group">
                     <label for="stub_elementor_template_id"><?php esc_html_e('Elementor Template', 'aapg'); ?></label>
                     <select id="stub_elementor_template_id">
@@ -1201,14 +1291,10 @@ final class Plugin {
                     <label for="stub_prompt_id"><?php esc_html_e('OpenAI Prompt ID', 'aapg'); ?></label>
                     <input type="text" id="stub_prompt_id" placeholder="prompt_456def" value="<?php echo esc_attr($settings['default_prompt_id'] ?? ''); ?>">
                 </div>
-                   <div class="aapg-form-group">
-                    <label for="stub_library"><?php esc_html_e('Library', 'aapg'); ?></label>
-                    <textarea id="stub_library" rows="3" placeholder="e.g. hubtemplates"><?php echo esc_textarea($settings['stub_maker_default_library'] ?? ''); ?></textarea>
-                </div>
                 
                 <div class="aapg-form-group">
                     <label for="stub_prompt"><?php esc_html_e('OpenAI Prompt Content', 'aapg'); ?></label>
-                    <input type="text" id="stub_prompt" placeholder="Enter your complete prompt here..." value="<?php echo esc_attr($settings['default_prompt'] ?? ''); ?>" required>
+                    <textarea id="stub_prompt" rows="6" placeholder="Enter your complete prompt here..." required><?php echo esc_textarea($settings['default_prompt'] ?? ''); ?></textarea>
                 </div>
                 
                 <div class="aapg-form-group">
@@ -1256,20 +1342,57 @@ final class Plugin {
                         </div>
                     </div>
                 </div>
+
+                <div id="aapg-research-center-batch" class="aapg-section" style="display:none; margin-top: 30px; border: 2px solid #46b450; border-radius: 4px; padding: 20px; background: #f7fff7; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <h4 style="margin-top: 0; color: #46b450; font-size: 16px;">
+                        <span class="dashicons dashicons-admin-post" style="vertical-align: middle;"></span>
+                        <?php esc_html_e('Research Center Batch Generation', 'aapg'); ?>
+                    </h4>
+                    <p style="color: #555; margin-bottom: 15px;">
+                        <?php esc_html_e('The following prompts were extracted from the generated stub. You can start batch generation of Research Center articles.', 'aapg'); ?>
+                    </p>
+                    <div id="aapg-research-center-prompts" style="margin: 15px 0; padding: 10px; background: #fff; border: 1px solid #ddd; border-radius: 3px;">
+                        <!-- Prompts will be listed here -->
+                    </div>
+                    <div id="aapg-batch-controls" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd;">
+                        <button type="button" class="button button-primary" id="aapg-start-batch-btn">
+                            <span class="dashicons dashicons-controls-play" style="vertical-align: middle;"></span>
+                            <?php esc_html_e('Start Making Research Articles', 'aapg'); ?>
+                        </button>
+                        <button type="button" class="button button-secondary" id="aapg-abort-batch-btn" style="margin-left: 10px;">
+                            <span class="dashicons dashicons-dismiss" style="vertical-align: middle;"></span>
+                            <?php esc_html_e('Abort', 'aapg'); ?>
+                        </button>
+                    </div>
+                    <div id="aapg-batch-progress" style="display:none; margin-top: 20px;">
+                        <div style="margin-bottom: 10px;">
+                            <strong style="color: #0073aa;"><?php esc_html_e('Generation Progress:', 'aapg'); ?></strong>
+                        </div>
+                        <div id="aapg-batch-log" style="border: 1px solid #ccc; background: #fff; padding: 12px; height: 200px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; border-radius: 3px; line-height: 1.6;"></div>
+                    </div>
+                    <div id="aapg-batch-articles-list" style="margin-top: 20px;">
+                        <!-- Created articles will be listed here -->
+                    </div>
+                </div>
+                </div>
             </div>
 
             <hr style="margin: 30px 0;">
-
-            <h3><?php esc_html_e('Research Maker', 'aapg'); ?></h3>
-            <p><?php esc_html_e('Generate a Research post with streaming output.', 'aapg'); ?></p>
-
+        <div class="aapg-section">
+            <div class="aapg-section-header">
+                <h3><?php esc_html_e('Research Maker', 'aapg'); ?></h3>
+                <span class="dashicons dashicons-arrow-down-alt2 aapg-section-toggle"></span>
+            </div>
+            <div class="aapg-section-content">
             <div class="aapg-form-group">
                 <label for="research_post_type"><?php esc_html_e('Target Post Type', 'aapg'); ?></label>
                 <select id="research_post_type">
                     <?php
                     $research_post_types = get_post_types(['show_ui' => true], 'objects');
+                    $default_research_post_type = $settings['default_research_post_type'] ?? 'post';
                     foreach ($research_post_types as $pt) {
-                        echo '<option value="' . esc_attr($pt->name) . '">' . esc_html($pt->labels->singular_name) . ' (' . esc_html($pt->name) . ')</option>';
+                        $selected = ($pt->name === $default_research_post_type) ? ' selected' : '';
+                        echo '<option value="' . esc_attr($pt->name) . '"' . $selected . '>' . esc_html($pt->labels->singular_name) . ' (' . esc_html($pt->name) . ')</option>';
                     }
                     ?>
                 </select>
@@ -1277,15 +1400,16 @@ final class Plugin {
 
             <div class="aapg-form-group">
                 <label for="research_prompt_id"><?php esc_html_e('OpenAI Prompt ID', 'aapg'); ?></label>
-                <input type="text" id="research_prompt_id" placeholder="pmpt_xxx" value="">
+                <input type="text" id="research_prompt_id" placeholder="pmpt_xxx" value="<?php echo esc_attr($settings['default_research_prompt_id'] ?? ''); ?>">
             </div>
 
             <div class="aapg-form-group">
                 <label for="research_prompt"><?php esc_html_e('OpenAI Prompt Content', 'aapg'); ?></label>
-                <textarea id="research_prompt" rows="6" placeholder="Enter your research prompt..." required></textarea>
+                <textarea id="research_prompt" rows="6" placeholder="Enter your research prompt..." required><?php echo esc_textarea($settings['default_research_prompt'] ?? ''); ?></textarea>
             </div>
 
             <p class="submit">
+                <button type="button" class="button button-secondary" id="aapg-save-research-settings-btn"><?php esc_html_e('Save Research Settings', 'aapg'); ?></button>
                 <button type="button" class="button button-primary" id="aapg-generate-research-btn"><?php esc_html_e('Generate Research (Streaming)', 'aapg'); ?></button>
             </p>
 
@@ -1298,14 +1422,21 @@ final class Plugin {
                     <div id="aapg-research-result" style="display:none;"></div>
                 </div>
             </div>
-
+            </div>
+        </div>
+            <hr style="margin: 30px 0;">
             <?php if (!empty($generated_pages)) : ?>
                 <div class="aapg-section aapg-generated-list">
-                    <h3><?php esc_html_e('Generated Pages', 'aapg'); ?></h3>
+                    <div class="aapg-section-header">
+                        <h3><?php esc_html_e('Generated Pages & Posts', 'aapg'); ?></h3>
+                        <span class="dashicons dashicons-arrow-down-alt2 aapg-section-toggle"></span>
+                    </div>
+                    <div class="aapg-section-content">
                     <table class="widefat striped">
                         <thead>
                             <tr>
                                 <th><?php esc_html_e('Title', 'aapg'); ?></th>
+                                <th><?php esc_html_e('Type', 'aapg'); ?></th>
                                 <th><?php esc_html_e('Status', 'aapg'); ?></th>
                                 <th><?php esc_html_e('Parent', 'aapg'); ?></th>
                                 <th><?php esc_html_e('Actions', 'aapg'); ?></th>
@@ -1315,6 +1446,11 @@ final class Plugin {
                             <?php foreach ($generated_pages as $gp) : ?>
                                 <tr>
                                     <td><strong><?php echo esc_html($gp['post_title']); ?></strong></td>
+                                    <td>
+                                        <span class="aapg-post-type-badge" style="display: inline-block; padding: 3px 8px; background: #<?php echo $gp['post_type'] === 'page' ? '2271b1' : ($gp['post_type'] === 'post' ? '00a32a' : '826eb4'); ?>; color: #fff; border-radius: 3px; font-size: 11px; font-weight: 600;">
+                                            <?php echo esc_html($gp['post_type_label']); ?>
+                                        </span>
+                                    </td>
                                     <td><span class="aapg-status-badge status-<?php echo esc_attr($gp['status']); ?>"><?php echo esc_html(ucfirst($gp['status'])); ?></span></td>
                                     <td>
                                         <?php if (!empty($gp['parent_info'])) : ?>
@@ -1331,7 +1467,7 @@ final class Plugin {
                                         <a href="<?php echo esc_url($gp['edit_url']); ?>" class="button button-small" target="_blank"><?php esc_html_e('Edit', 'aapg'); ?></a>
                                         <a href="<?php echo esc_url($gp['view_url']); ?>" class="button button-small" target="_blank"><?php esc_html_e('View', 'aapg'); ?></a>
                                         <?php if ($gp['status'] === 'draft') : ?>
-                                            <button type="button" class="button button-small button-primary aapg-publish-btn" data-page-id="<?php echo esc_attr($gp['ID']); ?>" data-page-title="<?php echo esc_attr($gp['post_title']); ?>">
+                                            <button type="button" class="button button-small button-primary aapg-publish-btn" data-page-id="<?php echo esc_attr($gp['ID']); ?>" data-page-title="<?php echo esc_attr($gp['post_title']); ?>" data-post-type="<?php echo esc_attr($gp['post_type']); ?>">
                                                 <?php esc_html_e('Publish', 'aapg'); ?>
                                             </button>
                                         <?php endif; ?>
@@ -1340,6 +1476,7 @@ final class Plugin {
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                    </div>
                 </div>
             <?php endif; ?>
         </div>
@@ -1348,8 +1485,23 @@ final class Plugin {
     }
 
     private function get_generated_pages(): array {
+        // Get all public post types that support title and editor
+        $post_types = get_post_types(['public' => true], 'names');
+        $supported_post_types = [];
+        
+        foreach ($post_types as $post_type) {
+            if (post_type_supports($post_type, 'title') && post_type_supports($post_type, 'editor')) {
+                $supported_post_types[] = $post_type;
+            }
+        }
+        
+        // If no supported types found, default to page and post
+        if (empty($supported_post_types)) {
+            $supported_post_types = ['page', 'post'];
+        }
+        
         $args = [
-            'post_type' => 'page',
+            'post_type' => $supported_post_types,
             'post_status' => ['publish', 'draft', 'pending', 'private'],
             'posts_per_page' => -1,
             'meta_query' => [
@@ -1379,9 +1531,15 @@ final class Plugin {
                     }
                 }
                 
+                // Get post type object for display
+                $post_type_obj = get_post_type_object($p->post_type);
+                $post_type_label = $post_type_obj ? $post_type_obj->labels->singular_name : $p->post_type;
+                
                 $pages[] = [
                     'ID' => $p->ID,
                     'post_title' => $p->post_title,
+                    'post_type' => $p->post_type,
+                    'post_type_label' => $post_type_label,
                     'status' => $p->post_status,
                     'parent_info' => $parent_info,
                     'edit_url' => get_edit_post_link($p->ID),
