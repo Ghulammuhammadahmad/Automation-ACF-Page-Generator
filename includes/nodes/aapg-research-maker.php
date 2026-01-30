@@ -107,7 +107,7 @@ The JSON must follow this structure exactly:
 
 All required fields must be present.
 If something is missing or invalid, fix it before finishing.
-The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAKE RESOLUTION TABLE using Full Stack. In references provide ancher tag with href attribute. In content dont provide the h1 instead pass the h1 in the research_title field. "
+The output must start with { and end with }. MAKE RESOLUTION TABLE using Full Stack. In references provide ancher tag with href attribute. In content dont provide the h1 instead pass the h1 in the research_title field. "
                 ],
                 [
                     'role'    => 'user',

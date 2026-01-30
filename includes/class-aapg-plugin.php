@@ -43,6 +43,9 @@ final class Plugin {
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_scripts']);
         add_shortcode('aapg_generator', [$this, 'render_shortcode']);
+        
+        // Load iframe shortcode
+        require_once AAPG_PLUGIN_DIR . 'includes/shortcodes/aapg-iframe-shortcode.php';
     }
 
     public function ajax_save_hub_maker_settings(): void {
