@@ -20,7 +20,15 @@ class AAPG_Stream_Request {
         $this->api_key = $settings['openai_api_key'] ?? '';
     }
 
-    public function stream_request($request_data, $callback) {
+    /**
+     * Run a streaming request to the OpenAI Responses API.
+     *
+     * @param array    $request_data Request body (model, input, etc.).
+     * @param callable $callback     Callback (event_type, decoded_data). Event type from API is decoded_data['type'] when present.
+     * @param bool     $send_headers When true (default), send SSE headers and clear output buffer. Set false when caller already sent headers.
+     * @return true|\WP_Error
+     */
+    public function stream_request($request_data, $callback, $send_headers = true) {
         if (empty($this->api_key)) {
             return new \WP_Error('no_api_key', 'OpenAI API key is not configured');
         }
@@ -28,17 +36,19 @@ class AAPG_Stream_Request {
         // Force streaming
         $request_data['stream'] = true;
 
-        // Disable all output buffering (VERY IMPORTANT for streaming)
-        while (ob_get_level() > 0) {
-            ob_end_flush();
-        }
-        ob_implicit_flush(true);
+        if ($send_headers) {
+            // Disable all output buffering (VERY IMPORTANT for streaming)
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
+            ob_implicit_flush(true);
 
-        // Tell browser we are streaming
-        header('Content-Type: text/event-stream');
-        header('Cache-Control: no-cache');
-        header('X-Accel-Buffering: no'); // nginx
-        header('Connection: keep-alive');
+            // Tell browser we are streaming
+            header('Content-Type: text/event-stream');
+            header('Cache-Control: no-cache');
+            header('X-Accel-Buffering: no'); // nginx
+            header('Connection: keep-alive');
+        }
 
         $curl = curl_init();
 
@@ -116,7 +126,9 @@ class AAPG_Stream_Request {
 
                 $decoded = json_decode($data, true);
                 if (json_last_error() === JSON_ERROR_NONE) {
-                    call_user_func($callback, $event, $decoded);
+                    // Prefer API event type from decoded data when present (OpenAI Responses API)
+                    $eventType = isset($decoded['type']) ? $decoded['type'] : $event;
+                    call_user_func($callback, $eventType, $decoded);
                 }
             }
         }

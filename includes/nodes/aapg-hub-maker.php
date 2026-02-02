@@ -1,0 +1,222 @@
+<?php
+/**
+ * AAPG Hub Maker Node
+ * Dedicated node for Hub page generation using stream request (OpenAI Responses API)
+ */
+
+namespace AAPG\Nodes;
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+class AAPG_Hub_Maker {
+
+    /**
+     * Generate a hub page with streaming via AAPG_Stream_Request.
+     *
+     * @param int         $elementor_template_id Elementor template ID
+     * @param string      $acf_group_id ACF field group key
+     * @param string      $prompt_id OpenAI prompt ID
+     * @param string      $prompt Prompt content (input text)
+     * @param string      $page_title Page title
+     * @param int         $parent_page_id Parent page ID (0 for none)
+     * @param callable|null $stream_callback Optional callback(string $type, array $payload). Types: 'delta', 'error', 'completed'
+     * @param int    $existing_page_id If > 0, update this page with the result instead of creating a new one (for AI edit flow).
+     * @param string $existing_content When editing existing page, current content to send as a separate user message (JSON or text).
+     * @return array|WP_Error Result array on success (when not streaming); WP_Error on failure. When streaming, result is passed via callback.
+     */
+    public static function generate_with_streaming(
+        int $elementor_template_id,
+        string $acf_group_id,
+        string $prompt_id,
+        string $prompt,
+        string $page_title,
+        int $parent_page_id = 0,
+        $stream_callback = null,
+        int $existing_page_id = 0,
+        $existing_content = ''
+    ) {
+        if (empty($prompt)) {
+            return new \WP_Error('prompt_required', 'Prompt content is required for hub generation');
+        }
+
+        require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-acf-group-openaijsonschema.php';
+        require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-stream-request.php';
+        require_once AAPG_PLUGIN_DIR . 'includes/nodes/aapg-stub-node.php';
+
+        $schema = \AAPG\Utilities\AAPG_ACF_Group_OpenAIJSONSchema::acf_schema_from_group($acf_group_id);
+
+        // $schema['properties']['RC_IMPORT_PACKET_CORE_V1'] = [
+        //     'type' => 'string',
+        //     'description' => 'SO MAKE THE RC_IMPORT_PACKET_CORE_V1',
+        // ];
+        // $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1'] = [
+        //     'type' => 'string',
+        //     'description' => 'SO MAKE THE RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1',
+        // ];
+        // $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2'] = [
+        //     'type' => 'string',
+        //     'description' => 'SO MAKE THE RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2',
+        // ];
+        // $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3'] = [
+        //     'type' => 'string',
+        //     'description' => 'SO MAKE THE RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3',
+        // ];
+        // $schema['properties']['RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4'] = [
+        //     'type' => 'string',
+        //     'description' => 'SO MAKE THE RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4',
+        // ];
+        // $schema['properties']['SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER'] = [
+        //     'type' => 'string',
+        //     'description' => 'SO MAKE THE SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER',
+        // ];
+        $schema['properties']['page_title'] = [
+            'type' => 'string',
+            'description' => 'The title for the generated page',
+        ];
+        $schema['properties']['page_slug'] = [
+            'type' => 'string',
+            'description' => 'The URL slug for the generated page (lowercase, hyphens only, no special characters)',
+        ];
+
+        if (!isset($schema['required']) || !is_array($schema['required'])) {
+            $schema['required'] = [];
+        }
+        // $schema['required'][] = 'RC_IMPORT_PACKET_CORE_V1';
+        // $schema['required'][] = 'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C1';
+        // $schema['required'][] = 'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C2';
+        // $schema['required'][] = 'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C3';
+        // $schema['required'][] = 'RC_IMPORT_PACKET_CLUSTER_V1__TOPIC01_C4';
+        // $schema['required'][] = 'SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER';
+        $schema['required'][] = 'page_title';
+        $schema['required'][] = 'page_slug';
+
+        // Build input: system, then (when editing) user message with existing content, then user message with prompt
+        $input = [
+            [
+                'role'    => 'system',
+                'content' =>
+                    "You must respond with a single valid JSON object only.\n" .
+                    "Do not include markdown, comments, or explanations.\n" .
+                    "Do not wrap the output in code fences.\n\n" .
+                    "The JSON must follow this structure exactly:\n" . json_encode($schema, JSON_PRETTY_PRINT) . "\n\n" .
+                    "All required fields must be present.\n" .
+                    "If something is missing or invalid, fix it before finishing.\n" .
+                    "The output must start with { and end with }."
+            ],
+        ];
+        if ($existing_page_id > 0 && $existing_content !== '') {
+            $input[] = [
+                'role'    => 'user',
+                'content' => '[CURRENT CONTENT – use as base and apply the user edit request in the next message. Return the same JSON structure with edits applied.]' . "\n\n" . $existing_content,
+            ];
+        }
+        $input[] = [
+            'role' => 'user',
+            'content' => $prompt,
+        ];
+
+        $request_data = [
+            'model'   => 'gpt-5.2',
+            'stream'  => true,
+            'prompt'  => ['id' => $prompt_id],
+            'reasoning' => ['effort' => 'medium'],
+            'text'    => ['format' => ['type' => 'json_object']],
+            'input'   => $input,
+        ];
+        // print_r($request_data);
+        // exit;
+        $streamed_content = '';
+        $result_to_return = null;
+
+        $inner_callback = function ($event_type, $decoded) use (
+            &$streamed_content,
+            &$result_to_return,
+            $stream_callback,
+            $elementor_template_id,
+            $acf_group_id,
+            $prompt_id,
+            $prompt,
+            $page_title,
+            $parent_page_id,
+            $existing_page_id
+        ) {
+            if ($event_type === 'response.output_text.delta' && !empty($decoded['delta'])) {
+                $streamed_content .= $decoded['delta'];
+                if (is_callable($stream_callback)) {
+                    call_user_func($stream_callback, 'delta', ['delta' => $decoded['delta']]);
+                }
+                return;
+            }
+
+            if ($event_type === 'response.error') {
+                $msg = $decoded['error']['message'] ?? 'Stream error';
+                if (is_callable($stream_callback)) {
+                    call_user_func($stream_callback, 'error', ['message' => $msg]);
+                }
+                return;
+            }
+
+            if ($event_type === 'response.completed') {
+                $final_text = $streamed_content;
+                if (!empty($decoded['response'])) {
+                    $out = \AAPG\Nodes\AAPG_Stub_Node::extract_response_output_text($decoded['response']);
+                    if ($out !== '') {
+                        $final_text = $out;
+                    }
+                }
+
+                $final_data = \AAPG\Nodes\AAPG_Stub_Node::parse_json_loose($final_text);
+                if (!is_array($final_data)) {
+                    if (is_callable($stream_callback)) {
+                        call_user_func($stream_callback, 'error', [
+                            'message' => 'Completed but JSON parsing failed',
+                            'tail' => substr($final_text, -400)
+                        ]);
+                    }
+                    return;
+                }
+
+                if ($existing_page_id > 0) {
+                    $result = \AAPG\Nodes\AAPG_Stub_Node::update_existing_page_with_json(
+                        $existing_page_id,
+                        $final_data,
+                        $acf_group_id
+                    );
+                } else {
+                    $result = \AAPG\Nodes\AAPG_Stub_Node::create_page_from_json_result(
+                        $final_data,
+                        $page_title,
+                        $parent_page_id,
+                        $elementor_template_id,
+                        $acf_group_id,
+                        $prompt_id,
+                        $prompt
+                    );
+                }
+
+                if (is_wp_error($result)) {
+                    if (is_callable($stream_callback)) {
+                        call_user_func($stream_callback, 'error', ['message' => $result->get_error_message()]);
+                    }
+                    return;
+                }
+
+                $result_to_return = $result;
+                if (is_callable($stream_callback)) {
+                    call_user_func($stream_callback, 'completed', ['result' => $result]);
+                }
+            }
+        };
+
+        $stream = new \AAPG\AAPG_Stream_Request();
+        $ret = $stream->stream_request($request_data, $inner_callback, false);
+
+        if (is_wp_error($ret)) {
+            return $ret;
+        }
+
+        return $result_to_return;
+    }
+}

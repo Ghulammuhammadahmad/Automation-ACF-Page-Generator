@@ -1,5 +1,13 @@
 jQuery(document).ready(function ($) {
 
+    // Build iframe edit URL when "Iframe Edit Page URL" setting is set (uses ?aapg_iframe_id=ID)
+    function getIframeEditUrl(pageId) {
+        var base = (typeof aapgAjax !== 'undefined' && aapgAjax.iframeEditBaseUrl) ? aapgAjax.iframeEditBaseUrl : '';
+        if (!base) return '';
+        var sep = base.indexOf('?') !== -1 ? '&' : '?';
+        return base + sep + 'aapg_iframe_id=' + pageId;
+    }
+
     // Collapsible sections functionality
     $(document).on('click', '.aapg-section-header', function () {
         var $section = $(this).closest('.aapg-section');
@@ -18,6 +26,38 @@ jQuery(document).ready(function ($) {
             window.aapgBatchPrompts = [];
         }
     });
+
+    // Copy SEO Master Launch Request to clipboard
+    $(document).on('click', '.aapg-copy-seo-master', function () {
+        var $block = $(this).closest('.aapg-seo-master-block');
+        var $pre = $block.find('.aapg-seo-master-content');
+        var text = $pre.length ? $pre.text() : '';
+        if (!text) return;
+        var $btn = $(this);
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () {
+                var orig = $btn.text();
+                $btn.text('Copied!');
+                setTimeout(function () { $btn.text(orig); }, 2000);
+            }).catch(function () {
+                aapgFallbackCopy(text, $btn);
+            });
+        } else {
+            aapgFallbackCopy(text, $btn);
+        }
+    });
+
+    function aapgFallbackCopy(text, $btn) {
+        var $ta = $('<textarea>').css({ position: 'fixed', left: '-9999px' }).val(text).appendTo('body');
+        $ta[0].select();
+        try {
+            document.execCommand('copy');
+            var orig = $btn.text();
+            $btn.text('Copied!');
+            setTimeout(function () { $btn.text(orig); }, 2000);
+        } catch (e) {}
+        $ta.remove();
+    }
 
     $('#aapg-save-hub-maker-settings-btn').on('click', function (e) {
         e.preventDefault();
@@ -103,148 +143,143 @@ jQuery(document).ready(function ($) {
         var $progressText = $('#aapg-progress-text');
         var $result = $('#aapg-result');
 
+        var acfFieldGroupKey = $('#acf_field_group_key').val();
+        var elementorTemplateId = $('#elementor_template_id').val();
+        var parentPageId = $('#parent_page_id').val();
+        var pageTitle = $('#page_title').val();
+        var inputText = $('#input_text').val();
+        var promptId = $('#prompt_id').val();
+
+        if (!acfFieldGroupKey || !elementorTemplateId || !pageTitle || !inputText) {
+            $result.html('<div class="notice notice-error"><p><strong>Error:</strong> ACF group, template, page title, and input text are required.</p></div>').show();
+            return;
+        }
+
         $btn.prop('disabled', true).text('Generating...');
         $progress.show();
         $result.hide();
+        $progressText.html('<p>Connecting stream...</p>');
 
-        var steps = [
-            'Generating',
-            'Generating.',
-            'Generating..',
-            'Generating...',
-            'Generating....',
-            'Generating.....',
-            'Generating......',
-            'Generating.......',
-            'Generating',
-            'Generating.',
-            'Generating..',
-            'Generating...',
-            'Generating....',
-            'Generating.....',
-            'Generating......',
-            'Generating.......',
-            'Generating',
-            'Generating.',
-            'Generating..',
-            'Generating...',
-            'Generating....',
-            'Generating.....',
-            'Generating......',
-            'Generating.......'
+        // Live stream box for Hub Maker
+        var liveBoxId = 'aapg-hub-maker-live-stream';
+        var $liveBox = $('#' + liveBoxId);
+        if (!$liveBox.length) {
+            $liveBox = $('<div id="' + liveBoxId + '" style="margin-top:10px; border:1px solid #ddd; background:#fff; padding:10px; max-height:220px; overflow:auto; font-family:monospace; white-space:pre-wrap; font-size:12px;"></div>');
+            $progressText.after($liveBox);
+        }
+        $liveBox.text('').show();
 
-        ];
-
-        var idx = 0;
-        $progressText.html('<p>' + steps[idx] + '</p>');
-
-        var interval = setInterval(function () {
-            idx++;
-            if (idx < steps.length) {
-                $progressText.html('<p>' + steps[idx] + '</p>');
-            }
-        }, 4000);
-
-        var formData = {
-            action: 'aapg_generate_page',
-            nonce: aapgAjax.nonce,
-            acf_field_group_key: $('#acf_field_group_key').val(),
-            elementor_template_id: $('#elementor_template_id').val(),
-            parent_page_id: $('#parent_page_id').val(),
-            page_title: $('#page_title').val(),
-            input_text: $('#input_text').val(),
-            prompt_id: $('#prompt_id').val(),
-        };
-
-        $.post(aapgAjax.ajaxUrl, formData)
-            .done(function (response) {
-                clearInterval(interval);
-                $btn.prop('disabled', false).text('Generate Page');
-
-                if (response && response.success) {
-                    $progressText.html('<p>✔ Completed!</p>');
-                    
-                    var resultHtml = '<div class="notice notice-success">' +
-                        '<p><strong>Page Created Successfully!</strong></p>' +
-                        '<p>Page Title: ' + (response.data.page_title || 'Unknown') + '</p>' +
-                        '<p><a href="' + response.data.edit_url + '" target="_blank" class="button">Edit Page</a> ' +
-                        '<a href="' + response.data.view_url + '" target="_blank" class="button">View Page</a></p>';
-                    
-                    // Add OpenAI response section if available
-                    if (response.data.openai_response) {
-                        resultHtml += '<hr><h4>' + aapgAjax.openaiResponseTitle + '</h4>' +
-                            '<div class="aapg-response-log">' +
-                            '<pre>' +
-                            JSON.stringify(response.data.openai_response, null, 2) +
-                            '</pre></div>';
-                    }
-                    
-                    resultHtml += '</div>';
-                    $result.html(resultHtml).show();
-                    
-                    // Add the new page to the generated pages list dynamically
-                    var newPageRow = '<tr>' +
-                        '<td><strong>' + (response.data.page_title || 'Unknown') + '</strong></td>' +
-                        '<td><span class="aapg-status-badge status-draft">Draft</span></td>' +
-                        '<td><span class="aapg-no-parent">—</span></td>' +
-                        '<td>' +
-                            '<a href="' + response.data.edit_url + '" target="_blank" class="button button-small">Edit</a> ' +
-                            '<a href="' + response.data.view_url + '" target="_blank" class="button button-small">View</a> ' +
-                            '<button type="button" class="button button-small button-primary aapg-publish-btn" data-page-id="' + response.data.page_id + '" data-page-title="' + (response.data.page_title || 'Unknown') + '">Publish</button>' +
-                        '</td>' +
-                        '</tr>';
-                    
-                    // Add to the top of the generated pages table
-                    var $tableBody = $('.aapg-generated-list tbody');
-                    if ($tableBody.length) {
-                        $tableBody.prepend(newPageRow);
-                    } else {
-                        // If table doesn't exist, create it
-                        var $table = $('<div class="aapg-section aapg-generated-list">' +
-                            '<h3>Generated Pages</h3>' +
-                            '<table class="widefat striped">' +
-                            '<thead><tr><th>Title</th><th>Status</th><th>Parent</th><th>Actions</th></tr></thead>' +
-                            '<tbody>' + newPageRow + '</tbody>' +
-                            '</table></div>');
-                        $('.aapg-generator-wrap').append($table);
-                    }
-                    
-                } else {
-                    // Handle error response
-                    var errorMessage = 'Unknown error occurred';
-                    if (response && response.data && response.data.message) {
-                        errorMessage = response.data.message;
-                    } else if (response && response.message) {
-                        errorMessage = response.message;
-                    } else if (typeof response === 'string') {
-                        errorMessage = response;
-                    }
-
-                    $progress.hide();
-                    $result.html('<div class="notice notice-error"><p><strong>Error:</strong> ' + errorMessage + '</p></div>').show();
-                }
+        fetch(aapgAjax.ajaxUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            },
+            body: $.param({
+                action: 'aapg_hub_maker_generate_stream',
+                nonce: aapgAjax.nonce,
+                acf_field_group_key: acfFieldGroupKey,
+                elementor_template_id: elementorTemplateId,
+                parent_page_id: parentPageId,
+                page_title: pageTitle,
+                input_text: inputText,
+                prompt_id: promptId
             })
-            .fail(function (xhr, status, error) {
-                clearInterval(interval);
-                $btn.prop('disabled', false).text('Generate Page');
-                $progress.hide();
+        }).then(function (resp) {
+            if (!resp.ok) {
+                throw new Error('HTTP ' + resp.status);
+            }
+            var reader = resp.body.getReader();
+            var decoder = new TextDecoder('utf-8');
+            var buffer = '';
+            var currentEvent = null;
+            var currentData = '';
 
-                var errorMessage = 'Request failed';
-                if (xhr.responseText) {
-                    try {
-                        var errorResponse = JSON.parse(xhr.responseText);
-                        if (errorResponse.data && errorResponse.data.message) {
-                            errorMessage = errorResponse.data.message;
+            function processBuffer() {
+                var parts = buffer.split('\n\n');
+                buffer = parts.pop() || '';
+                parts.forEach(function (block) {
+                    currentEvent = null;
+                    currentData = '';
+                    block.split('\n').forEach(function (line) {
+                        line = line.trim();
+                        if (line.indexOf('event:') === 0) {
+                            currentEvent = line.substring(6).trim();
+                        } else if (line.indexOf('data:') === 0) {
+                            currentData += line.substring(5).trim();
                         }
-                    } catch (e) {
-                        errorMessage = xhr.responseText;
+                    });
+                    if (!currentEvent || !currentData) return;
+                    var parsed;
+                    try {
+                        parsed = JSON.parse(currentData);
+                    } catch (err) {
+                        return;
                     }
-                } else if (error) {
-                    errorMessage = error;
-                }
+                    if (currentEvent === 'delta' && parsed.delta) {
+                        $progressText.html('<p>Streaming...</p>');
+                        $liveBox.append(parsed.delta);
+                        $liveBox.scrollTop($liveBox[0].scrollHeight);
+                    }
+                    if (currentEvent === 'error') {
+                        $btn.prop('disabled', false).text('Generate Page');
+                        $progress.hide();
+                        $liveBox.hide();
+                        $result.html('<div class="notice notice-error"><p><strong>Error:</strong> ' + (parsed.message || 'Stream error') + '</p></div>').show();
+                    }
+                    if (currentEvent === 'result') {
+                        $btn.prop('disabled', false).text('Generate Page');
+                        $progress.hide();
+                        $liveBox.hide();
+                        var data = parsed;
+                        var editUrl = data.edit_url || (window.location.origin + '/wp-admin/post.php?post=' + data.page_id + '&action=edit');
+                        var viewUrl = data.view_url || data.page_url || '#';
+                        var resultHtml = '<div class="notice notice-success">' +
+                            '<p><strong>Page Created Successfully!</strong></p>' +
+                            '<p>Page Title: ' + (data.page_title || 'Unknown') + '</p>' +
+                            '<p><a href="' + editUrl + '" target="_blank" class="button">Edit Page</a> ' +
+                            '<a href="' + viewUrl + '" target="_blank" class="button">View Page</a></p></div>';
+                        $result.html(resultHtml).show();
+                        var iframeEditUrl = getIframeEditUrl(data.page_id);
+                        var newPageRow = '<tr>' +
+                            '<td><strong>' + (data.page_title || 'Unknown') + '</strong></td>' +
+                            '<td><span class="aapg-status-badge status-draft">Draft</span></td>' +
+                            '<td><span class="aapg-no-parent">—</span></td>' +
+                            '<td><a href="' + editUrl + '" target="_blank" class="button button-small">Edit</a> ' +
+                            (iframeEditUrl ? '<a href="' + iframeEditUrl + '" target="_blank" class="button button-small">Edit (iframe)</a> ' : '') +
+                            '<a href="' + viewUrl + '" target="_blank" class="button button-small">View</a> ' +
+                            '<button type="button" class="button button-small button-primary aapg-publish-btn" data-page-id="' + data.page_id + '" data-page-title="' + (data.page_title || 'Unknown') + '">Publish</button></td></tr>';
+                        var $tableBody = $('.aapg-generated-list tbody');
+                        if ($tableBody.length) {
+                            $tableBody.prepend(newPageRow);
+                        } else {
+                            var $table = $('<div class="aapg-section aapg-generated-list"><h3>Generated Pages</h3><table class="widefat striped"><thead><tr><th>Title</th><th>Status</th><th>Parent</th><th>Actions</th></tr></thead><tbody>' + newPageRow + '</tbody></table></div>');
+                            $('.aapg-generator-wrap').append($table);
+                        }
+                    }
+                    if (currentEvent === 'done') {
+                        $btn.prop('disabled', false).text('Generate Page');
+                    }
+                });
+            }
 
-                $result.html('<div class="notice notice-error"><p><strong>Request Failed:</strong> ' + errorMessage + '</p></div>').show();
-            });
+            function readNext() {
+                return reader.read().then(function (chunk) {
+                    if (chunk.done) {
+                        if (buffer.length) processBuffer();
+                        return;
+                    }
+                    buffer += decoder.decode(chunk.value, { stream: true });
+                    processBuffer();
+                    return readNext();
+                });
+            }
+            return readNext();
+        }).catch(function (err) {
+            $btn.prop('disabled', false).text('Generate Page');
+            $progress.hide();
+            $liveBox.hide();
+            $result.html('<div class="notice notice-error"><p><strong>Request Failed:</strong> ' + (err.message || 'Connection error') + '</p></div>').show();
+        });
     });
 
     // Handle publish button clicks
@@ -331,6 +366,69 @@ jQuery(document).ready(function ($) {
                     errorMessage = error;
                 }
                 
+                alert('Request Failed: ' + errorMessage);
+                $btn.prop('disabled', false).text(originalText);
+            });
+    });
+
+    // Handle unpublish button clicks
+    $(document).on('click', '.aapg-unpublish-btn', function (e) {
+        e.preventDefault();
+
+        var $btn = $(this);
+        var pageId = $btn.data('page-id');
+        var pageTitle = $btn.data('page-title');
+        var postType = $btn.data('post-type');
+
+        if (!pageId) {
+            alert('Invalid page ID');
+            return;
+        }
+
+        if (!confirm('Are you sure you want to unpublish "' + pageTitle + '"?')) {
+            return;
+        }
+
+        var originalText = $btn.text();
+        $btn.prop('disabled', true).text('Unpublishing...');
+
+        $.post(aapgAjax.ajaxUrl, {
+            action: 'aapg_unpublish_page',
+            nonce: aapgAjax.nonce,
+            page_id: pageId
+        })
+            .done(function (response) {
+                if (response && response.success) {
+                    var successHtml = '<div class="notice notice-success is-dismissible">' +
+                        '<p><strong>Success!</strong> ' + (response.data.message || 'Unpublished.') + '</p>' +
+                        '</div>';
+                    $('.aapg-generator-wrap').prepend(successHtml);
+                    $btn.closest('tr').find('.aapg-status-badge')
+                        .removeClass('status-publish')
+                        .addClass('status-draft')
+                        .text('Draft');
+                    $btn.replaceWith(
+                        '<button type="button" class="button button-small button-primary aapg-publish-btn" data-page-id="' + pageId + '" data-page-title="' + (pageTitle || '') + '" data-post-type="' + (postType || 'page') + '">Publish</button>'
+                    );
+                    setTimeout(function () {
+                        $('.notice-success.is-dismissible').fadeOut(function () {
+                            $(this).remove();
+                        });
+                    }, 5000);
+                } else {
+                    var errorMessage = (response && response.data && response.data.message) ? response.data.message : 'Unknown error';
+                    alert('Error: ' + errorMessage);
+                    $btn.prop('disabled', false).text(originalText);
+                }
+            })
+            .fail(function (xhr) {
+                var errorMessage = 'Request failed';
+                if (xhr.responseText) {
+                    try {
+                        var err = JSON.parse(xhr.responseText);
+                        if (err.data && err.data.message) errorMessage = err.data.message;
+                    } catch (e) { }
+                }
                 alert('Request Failed: ' + errorMessage);
                 $btn.prop('disabled', false).text(originalText);
             });
@@ -573,6 +671,22 @@ jQuery(document).ready(function ($) {
                     html += '<p><strong>AI Generated Title:</strong> ' + data.page_title + '</p>';
                     html += '<p><strong>Page URL:</strong> <a href="' + data.page_url + '" target="_blank">' + data.page_url + '</a></p>';
                     html += '<p><strong>Parent Page ID:</strong> ' + (data.parent_page_id || 'None') + '</p>';
+                    var stubIframeUrl = getIframeEditUrl(data.page_id);
+                    if (stubIframeUrl) {
+                        html += '<p><a href="' + stubIframeUrl + '" target="_blank" class="button button-small">Edit</a></p>';
+                    }
+
+                    // Show SEO Master Launch Request when present, with copy button
+                    var seoMaster = data.SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER;
+                    if (seoMaster && (typeof seoMaster === 'string') && seoMaster.trim() !== '') {
+                        var escaped = $('<div/>').text(seoMaster).html();
+                        html += '<div class="aapg-seo-master-block" style="margin-top:15px; padding:12px; background:#f0f6fc; border:1px solid #c3c4c7; border-radius:4px;">';
+                        html += '<p style="margin:0 0 8px 0;"><strong>SEO Master Launch Request (for SEO Bundle Planner)</strong></p>';
+                        html += '<pre class="aapg-seo-master-content" style="white-space:pre-wrap; word-break:break-word; max-height:200px; overflow:auto; padding:10px; background:#fff; border:1px solid #dcdcde; margin:0 0 10px 0; font-size:12px;">' + escaped + '</pre>';
+                        html += '<button type="button" class="button button-small aapg-copy-seo-master">Copy</button>';
+                        html += '</div>';
+                    }
+
                     html += '</div>';
 
                     $result.html(html).show();

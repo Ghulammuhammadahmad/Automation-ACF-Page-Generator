@@ -28,6 +28,8 @@ class AAPG_Stub_Node {
      * @param string $page_title Page title
      * @param int $parent_page_id Parent page ID (optional)
      * @param callable $stream_callback Optional callback for streaming events (delta, error, completed)
+     * @param int    $existing_page_id  If > 0, update this page with the result instead of creating a new one (for AI edit flow).
+     * @param string $existing_content  When editing existing page, current content to send as a separate user message (JSON or text).
      * @return array Generated page data with streaming results
      */
     public static function generate_page_with_streaming(
@@ -39,7 +41,9 @@ class AAPG_Stub_Node {
         string $prompt,
         string $page_title,
         $parent_page_id = 0,
-        $stream_callback = null
+        $stream_callback = null,
+        $existing_page_id = 0,
+        $existing_content = ''
     ) {
         // Validate required prompt
         if (empty($prompt)) {
@@ -115,6 +119,34 @@ class AAPG_Stub_Node {
             return new \WP_Error('no_api_key', 'OpenAI API key is not configured');
         }
 
+        // Build input: system, then (when editing) user message with existing content, then user message with prompt
+        $input = [
+            [
+                'role' => 'system',
+                'content' =>
+                    "You must respond with a single valid JSON object only.
+Do not include markdown, comments, or explanations.
+Do not wrap the output in code fences.
+
+The JSON must follow this structure exactly:
+" . json_encode($schema, JSON_PRETTY_PRINT) . "
+
+All required fields must be present.
+If something is missing or invalid, fix it before finishing.
+The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAKE RESOLUTION TABLE using Full Stack."
+            ],
+        ];
+        if ($existing_page_id > 0 && $existing_content !== '') {
+            $input[] = [
+                'role' => 'user',
+                'content' => '[CURRENT CONTENT – use as base and apply the user edit request in the next message. Return the same JSON structure with edits applied.]' . "\n\n" . $existing_content,
+            ];
+        }
+        $input[] = [
+            'role' => 'user',
+            'content' => $prompt,
+        ];
+
         // Prepare streaming request data with the provided prompt
         $request_data = [
             'model' => 'gpt-5.2',
@@ -130,26 +162,7 @@ class AAPG_Stub_Node {
                     'type' => 'json_object'
                 ],
             ],
-            'input' => [
-                [
-                    'role' => 'system',
-                    'content' =>
-                        "You must respond with a single valid JSON object only.
-Do not include markdown, comments, or explanations.
-Do not wrap the output in code fences.
-
-The JSON must follow this structure exactly:
-" . json_encode($schema, JSON_PRETTY_PRINT) . "
-
-All required fields must be present.
-If something is missing or invalid, fix it before finishing.
-The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAKE RESOLUTION TABLE using Full Stack."
-                ],
-                [
-                    'role' => 'user',
-                    'content' => $prompt
-                ]
-            ]
+            'input' => $input,
         ];
 
         $streamed_content = '';
@@ -288,6 +301,15 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
             return new \WP_Error('no_valid_json', $msg);
         }
 
+        $existing_page_id = (int) $existing_page_id;
+        if ($existing_page_id > 0) {
+            $update_result = self::update_existing_page_with_json($existing_page_id, $final_data, $acf_group_id);
+            if (is_wp_error($update_result)) {
+                return $update_result;
+            }
+            return $update_result;
+        }
+
         // Prepare page creation arguments
         // Use title from OpenAI response, fallback to provided title
         $generated_title = $final_data['page_title'] ?? $page_title;
@@ -383,9 +405,135 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
     }
 
     /**
+     * Update an existing page with parsed JSON from AI (for edit-with-AI flow).
+     * Applies link label replacement, ACF data, title/slug, and SEO meta.
+     *
+     * @param int    $page_id     Existing page ID.
+     * @param array  $final_data  Parsed JSON from OpenAI (page_title, page_slug, ACF fields, URL_RESOLUTION_TABLE, etc.)
+     * @param string $acf_group_id ACF field group key.
+     * @return array|WP_Error Result array or WP_Error.
+     */
+    public static function update_existing_page_with_json($page_id, array $final_data, string $acf_group_id) {
+        $page = get_post($page_id);
+        if (!$page || $page->post_type !== 'page') {
+            return new \WP_Error('invalid_page', 'Invalid or non-page post.');
+        }
+        $url_resolution_table = $final_data['URL_RESOLUTION_TABLE'] ?? [];
+        $processed_data = self::replace_link_labels($final_data, $url_resolution_table);
+        self::apply_json_to_acf($page_id, $processed_data, $acf_group_id);
+
+        $generated_title = $processed_data['page_title'] ?? $page->post_title;
+        $generated_slug = $processed_data['page_slug'] ?? $page->post_name;
+        if (!empty($generated_slug)) {
+            $generated_slug = sanitize_title($generated_slug);
+        } else {
+            $generated_slug = sanitize_title($generated_title);
+        }
+        wp_update_post([
+            'ID'         => $page_id,
+            'post_title' => sanitize_text_field($generated_title),
+            'post_name'  => $generated_slug,
+        ]);
+
+        update_post_meta($page_id, 'aapg_ai_generated_title', sanitize_text_field($generated_title));
+        update_post_meta($page_id, 'aapg_ai_generated_slug', $generated_slug);
+        if (!empty($processed_data['meta_title'])) {
+            update_post_meta($page_id, 'rank_math_title', sanitize_text_field($processed_data['meta_title']));
+        }
+        if (!empty($processed_data['meta_description'])) {
+            update_post_meta($page_id, 'rank_math_description', sanitize_textarea_field($processed_data['meta_description']));
+        }
+        return [
+            'success'      => true,
+            'page_id'      => $page_id,
+            'page_url'     => get_permalink($page_id),
+            'page_title'   => $generated_title,
+            'page_slug'    => $generated_slug,
+        ];
+    }
+
+    /**
+     * Create a page from parsed OpenAI JSON result. Used by Hub Maker and other nodes.
+     *
+     * @param array  $final_data Parsed JSON from OpenAI (page_title, page_slug, ACF fields, URL_RESOLUTION_TABLE, etc.)
+     * @param string $page_title Fallback page title if not in final_data
+     * @param int    $parent_page_id Parent page ID
+     * @param int    $elementor_template_id Elementor template ID
+     * @param string $acf_group_id ACF field group key
+     * @param string $prompt_id OpenAI prompt ID
+     * @param string $prompt Prompt content
+     * @return array|WP_Error Result array (success, page_id, page_url, ...) or WP_Error
+     */
+    public static function create_page_from_json_result(
+        array $final_data,
+        string $page_title,
+        int $parent_page_id,
+        int $elementor_template_id,
+        string $acf_group_id,
+        string $prompt_id,
+        string $prompt
+    ) {
+        $generated_title = $final_data['page_title'] ?? $page_title;
+        $generated_slug = $final_data['page_slug'] ?? '';
+        if (!empty($generated_slug)) {
+            $generated_slug = sanitize_title($generated_slug);
+        } else {
+            $generated_slug = sanitize_title($generated_title);
+        }
+
+        $page_args = [
+            'post_type'   => 'page',
+            'post_status' => 'draft',
+            'post_title'  => sanitize_text_field($generated_title),
+            'post_name'   => $generated_slug,
+        ];
+        if ($parent_page_id > 0) {
+            $page_args['post_parent'] = $parent_page_id;
+        }
+
+        $page_id = wp_insert_post($page_args, true);
+        if (is_wp_error($page_id)) {
+            return new \WP_Error('page_creation_failed', 'Failed to create page: ' . $page_id->get_error_message());
+        }
+
+        update_post_meta($page_id, 'isGeneratedByAutomation', 'true');
+        update_post_meta($page_id, 'aiGenerated', 'true');
+        update_post_meta($page_id, 'aapg_acf_group_id', $acf_group_id);
+        update_post_meta($page_id, 'aapg_elementor_template_id', $elementor_template_id);
+        update_post_meta($page_id, 'aapg_prompt_id', $prompt_id);
+        update_post_meta($page_id, 'aapg_prompt_content', $prompt);
+        update_post_meta($page_id, 'aapg_original_title', $page_title);
+        update_post_meta($page_id, 'aapg_ai_generated_title', $generated_title);
+        update_post_meta($page_id, 'aapg_ai_generated_slug', $generated_slug);
+
+        self::copy_elementor_template_to_page($elementor_template_id, $page_id);
+
+        $url_resolution_table = $final_data['URL_RESOLUTION_TABLE'] ?? [];
+        $processed_data = self::replace_link_labels($final_data, $url_resolution_table);
+        self::apply_json_to_acf($page_id, $processed_data, $acf_group_id);
+
+        if (!empty($processed_data['meta_title'])) {
+            update_post_meta($page_id, 'rank_math_title', sanitize_text_field($processed_data['meta_title']));
+        }
+        if (!empty($processed_data['meta_description'])) {
+            update_post_meta($page_id, 'rank_math_description', sanitize_textarea_field($processed_data['meta_description']));
+        }
+
+        return [
+            'success'         => true,
+            'page_id'         => $page_id,
+            'page_url'        => get_permalink($page_id),
+            'page_title'      => $generated_title,
+            'page_slug'       => $generated_slug,
+            'original_title'  => $page_title,
+            'parent_page_id'  => $parent_page_id,
+        ];
+    }
+
+    /**
      * Extract final output text from a Responses API payload (handles multiple shapes).
      */
-    private static function extract_response_output_text(array $resp): string {
+    public static function extract_response_output_text(array $resp): string {
         // Best-case shortcut
         if (isset($resp['output_text']) && is_string($resp['output_text'])) {
             return $resp['output_text'];
@@ -420,7 +568,7 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
     /**
      * Try to parse JSON robustly. If there is leading/trailing junk, crop to first { and last }.
      */
-    private static function parse_json_loose(string $text) {
+    public static function parse_json_loose(string $text) {
         $text = trim($text);
         if ($text === '') return null;
 

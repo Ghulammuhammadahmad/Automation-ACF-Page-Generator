@@ -8,11 +8,24 @@ if (!defined('ABSPATH')) {
 
 class AAPG_Research_Maker
 {
+    /**
+     * Generate research content with streaming. Optionally update an existing post when existing_post_id > 0.
+     *
+     * @param string   $post_type         Target post type.
+     * @param string   $prompt_id         OpenAI prompt ID.
+     * @param string   $prompt            Prompt content.
+     * @param callable|null $stream_callback Optional callback for streaming.
+     * @param int      $existing_post_id  If > 0, update this post instead of creating (for AI edit flow).
+     * @param string   $existing_content  When editing existing post, current content to send as a separate user message (JSON or text).
+     * @return array|WP_Error
+     */
     public static function generate_research_with_streaming(
         string $post_type,
         string $prompt_id,
         string $prompt,
-        $stream_callback = null
+        $stream_callback = null,
+        int $existing_post_id = 0,
+        $existing_content = ''
     ) {
         if (empty($post_type) || empty($prompt_id) || empty($prompt)) {
             return new \WP_Error(
@@ -82,6 +95,34 @@ class AAPG_Research_Maker
             ],
         ];
 
+        // Build input: system, then (when editing) user message with existing content, then user message with prompt
+        $input = [
+            [
+                'role'    => 'system',
+                'content' =>
+                    "You must respond with a single valid JSON object only.
+Do not include markdown, comments, or explanations.
+Do not wrap the output in code fences.
+
+The JSON must follow this structure exactly:
+" . json_encode($schema, JSON_PRETTY_PRINT) . "
+
+All required fields must be present.
+If something is missing or invalid, fix it before finishing.
+The output must start with { and end with }. MAKE RESOLUTION TABLE using Full Stack. In references provide ancher tag with href attribute. In content dont provide the h1 instead pass the h1 in the research_title field. "
+            ],
+        ];
+        if ($existing_post_id > 0 && $existing_content !== '') {
+            $input[] = [
+                'role'    => 'user',
+                'content' => '[CURRENT CONTENT – use as base and apply the user edit request in the next message. Return the same JSON structure with edits applied.]' . "\n\n" . $existing_content,
+            ];
+        }
+        $input[] = [
+            'role'    => 'user',
+            'content' => $prompt,
+        ];
+
         /**
          * ✅ Correct OpenAI Responses API payload
          */
@@ -94,26 +135,7 @@ class AAPG_Research_Maker
             'tools' => [
                 ['type' => 'web_search']
             ],
-            'input' => [
-                [
-                    'role'    => 'system',
-                    'content' =>
-                        "You must respond with a single valid JSON object only.
-Do not include markdown, comments, or explanations.
-Do not wrap the output in code fences.
-
-The JSON must follow this structure exactly:
-" . json_encode($schema, JSON_PRETTY_PRINT) . "
-
-All required fields must be present.
-If something is missing or invalid, fix it before finishing.
-The output must start with { and end with }. MAKE RESOLUTION TABLE using Full Stack. In references provide ancher tag with href attribute. In content dont provide the h1 instead pass the h1 in the research_title field. "
-                ],
-                [
-                    'role'    => 'user',
-                    'content' => $prompt
-                ]
-            ]
+            'input' => $input,
         ];
 
         $streamed_content = '';
@@ -251,24 +273,39 @@ The output must start with { and end with }. MAKE RESOLUTION TABLE using Full St
             $research_title = $meta_title ?: ('Research ' . $prompt_id);
         }
 
-        /**
-         * ✅ Create WP Post
-         */
-        $post_id = wp_insert_post([
-            'post_type'    => $post_type,
-            'post_status'  => 'draft',
-            'post_title'   => sanitize_text_field($research_title),
-            'post_content' => wp_kses_post($content),
-        ], true);
+        if ($existing_post_id > 0) {
+            $post_id = $existing_post_id;
+            $updated = wp_update_post([
+                'ID'           => $post_id,
+                'post_title'   => sanitize_text_field($research_title),
+                'post_content' => wp_kses_post($content),
+            ], true);
+            if (is_wp_error($updated)) {
+                return new \WP_Error(
+                    'research_update_failed',
+                    'Failed: ' . $updated->get_error_message()
+                );
+            }
+        } else {
+            /**
+             * ✅ Create WP Post
+             */
+            $post_id = wp_insert_post([
+                'post_type'    => $post_type,
+                'post_status'  => 'draft',
+                'post_title'   => sanitize_text_field($research_title),
+                'post_content' => wp_kses_post($content),
+            ], true);
 
-        if (is_wp_error($post_id)) {
-            return new \WP_Error(
-                'research_creation_failed',
-                'Failed: ' . $post_id->get_error_message()
-            );
+            if (is_wp_error($post_id)) {
+                return new \WP_Error(
+                    'research_creation_failed',
+                    'Failed: ' . $post_id->get_error_message()
+                );
+            }
         }
 
-        // Get the created post to extract slug
+        // Get the created/updated post to extract slug
         $created_post = get_post($post_id);
         $generated_slug = $created_post ? $created_post->post_name : '';
 

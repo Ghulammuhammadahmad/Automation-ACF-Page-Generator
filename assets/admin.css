@@ -307,3 +307,12 @@
 .aapg-generated-list table tbody tr td:first-child{
     width:30% !important; 
 }
+.aapg-unpublish-btn {
+    background-color: #d63638 !important;
+    color: #fff !important;
+    border-color: #d63638 !important;
+}
+.aapg-unpublish-btn:hover {
+    background-color: #d63638 !important;
+    border-color: #d63638 !important;
+}
