@@ -239,6 +239,51 @@
         });
     }
 
+    function initPublishUnpublish() {
+        var bar = document.getElementById('aapg-iframe-publish-bar');
+        if (!bar) return;
+        var btn = bar.querySelector('.aapg-iframe-publish-btn');
+        var statusValue = bar.querySelector('.aapg-iframe-status-value');
+        var statusMsg = document.getElementById('aapg-iframe-publish-status-msg');
+        if (!btn) return;
+        btn.addEventListener('click', function() {
+            var postId = bar.getAttribute('data-post-id');
+            var nonce = bar.getAttribute('data-nonce');
+            var ajaxurl = bar.getAttribute('data-ajaxurl');
+            var setStatus = btn.getAttribute('data-set-status');
+            if (!postId || !nonce || !ajaxurl || !setStatus) return;
+            btn.disabled = true;
+            if (statusMsg) statusMsg.textContent = '';
+            var data = new FormData();
+            data.append('action', 'aapg_iframe_set_post_status');
+            data.append('nonce', nonce);
+            data.append('post_id', postId);
+            data.append('status', setStatus);
+            fetch(ajaxurl, { method: 'POST', body: data, credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                    if (res.success && res.data) {
+                        bar.setAttribute('data-status', res.data.status);
+                        if (statusValue) statusValue.textContent = res.data.status_label;
+                        btn.textContent = res.data.next_action;
+                        btn.setAttribute('data-set-status', res.data.next_status);
+                        if (typeof window.aapgReloadIframe === 'function') window.aapgReloadIframe();
+                    }
+                    if (statusMsg) {
+                        statusMsg.textContent = (res.data && res.data.message) ? res.data.message : (res.success ? '' : (res.data && res.data.message ? res.data.message : 'Request failed.'));
+                        statusMsg.className = 'aapg-iframe-publish-status-msg ' + (res.success ? 'aapg-success' : 'aapg-error');
+                    }
+                })
+                .catch(function() {
+                    if (statusMsg) {
+                        statusMsg.textContent = 'Request failed.';
+                        statusMsg.className = 'aapg-iframe-publish-status-msg aapg-error';
+                    }
+                })
+                .then(function() { btn.disabled = false; });
+        });
+    }
+
     function initEditWithAi() {
         var form = document.getElementById('aapg-edit-with-ai-form');
         if (!form) return;
@@ -392,6 +437,7 @@
         initTinyMCE();
         initRepeaters();
         initCollapsibles();
+        initPublishUnpublish();
         initAcfForm();
         initResearchContentEditor();
         initEditWithAi();

@@ -121,6 +121,12 @@ function aapg_iframe_shortcode($atts) {
         esc_html(get_the_title($page_id))
     );
 
+    // Publish / Unpublish bar (when user can edit)
+    $publish_bar_html = '';
+    if (current_user_can('edit_post', $page_id)) {
+        $publish_bar_html = aapg_iframe_get_publish_bar_html($page_id);
+    }
+
     // Edit with AI box (before AI Generation Information) – uses stored prompt id, ACF group, stored prompt; user only adds edit prompt and page type
     $edit_with_ai_html = aapg_get_edit_with_ai_box($page_id);
 
@@ -138,7 +144,7 @@ function aapg_iframe_shortcode($atts) {
         $research_editor_html = aapg_iframe_get_research_content_editor_html($page_id);
     }
 
-    return $iframe_html . $edit_with_ai_html . $ai_info_html . $acf_form_html . $research_editor_html;
+    return $iframe_html . $publish_bar_html . $edit_with_ai_html . $ai_info_html . $acf_form_html . $research_editor_html;
 }
 add_shortcode('aapg_iframe', 'aapg_iframe_shortcode');
 
@@ -299,6 +305,36 @@ function aapg_get_edit_with_ai_box($page_id) {
  */
 function aapg_iframe_get_acf_form_css() {
     return '';
+}
+
+/**
+ * Return HTML for the Publish / Unpublish bar (toggle post status) below the iframe.
+ *
+ * @param int $page_id Post ID.
+ * @return string HTML.
+ */
+function aapg_iframe_get_publish_bar_html($page_id) {
+    $page_id = (int) $page_id;
+    $post = get_post($page_id);
+    if (!$post) {
+        return '';
+    }
+    $status = $post->post_status;
+    $is_published = ($status === 'publish');
+    $nonce = wp_create_nonce('aapg_iframe_publish_' . $page_id);
+    $ajaxurl = admin_url('admin-ajax.php');
+
+    $status_label = $is_published ? __('Published', 'aapg') : __('Draft', 'aapg');
+    $action_label = $is_published ? __('Unpublish', 'aapg') : __('Publish', 'aapg');
+    $new_status = $is_published ? 'draft' : 'publish';
+
+    $html = '<div id="aapg-iframe-publish-bar" class="aapg-iframe-publish-bar" data-post-id="' . esc_attr((string) $page_id) . '" data-nonce="' . esc_attr($nonce) . '" data-ajaxurl="' . esc_attr($ajaxurl) . '" data-status="' . esc_attr($status) . '">';
+    $html .= '<span class="aapg-iframe-publish-status">' . esc_html__('Status:', 'aapg') . ' <strong class="aapg-iframe-status-value">' . esc_html($status_label) . '</strong></span>';
+    $html .= ' <button type="button" class="aapg-iframe-publish-btn" data-set-status="' . esc_attr($new_status) . '">' . esc_html($action_label) . '</button>';
+    $html .= '<span id="aapg-iframe-publish-status-msg" class="aapg-iframe-publish-status-msg" aria-live="polite"></span>';
+    $html .= '</div>';
+
+    return $html;
 }
 
 /**
@@ -847,6 +883,46 @@ function aapg_iframe_ajax_edit_with_ai() {
     exit;
 }
 add_action('wp_ajax_aapg_iframe_edit_with_ai', 'aapg_iframe_ajax_edit_with_ai');
+
+/**
+ * AJAX handler: set post status (publish / draft) from iframe shortcode publish bar.
+ */
+function aapg_iframe_ajax_set_post_status() {
+    $post_id = isset($_POST['post_id']) ? absint($_POST['post_id']) : 0;
+    if (!$post_id) {
+        wp_send_json_error(['message' => __('Invalid post.', 'aapg')]);
+    }
+    if (!current_user_can('edit_post', $post_id)) {
+        wp_send_json_error(['message' => __('You do not have permission to edit this post.', 'aapg')]);
+    }
+    $nonce_key = 'aapg_iframe_publish_' . $post_id;
+    if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), $nonce_key)) {
+        wp_send_json_error(['message' => __('Security check failed.', 'aapg')]);
+    }
+    $status = isset($_POST['status']) ? sanitize_text_field(wp_unslash($_POST['status'])) : '';
+    $allowed = ['publish', 'draft'];
+    if (!in_array($status, $allowed, true)) {
+        wp_send_json_error(['message' => __('Invalid status.', 'aapg')]);
+    }
+    $updated = wp_update_post([
+        'ID' => $post_id,
+        'post_status' => $status,
+    ], true);
+    if (is_wp_error($updated)) {
+        wp_send_json_error(['message' => $updated->get_error_message()]);
+    }
+    $status_label = ($status === 'publish') ? __('Published', 'aapg') : __('Draft', 'aapg');
+    $next_action = ($status === 'publish') ? __('Unpublish', 'aapg') : __('Publish', 'aapg');
+    $next_status = ($status === 'publish') ? 'draft' : 'publish';
+    wp_send_json_success([
+        'message' => ($status === 'publish') ? __('Page published.', 'aapg') : __('Page unpublished.', 'aapg'),
+        'status' => $status,
+        'status_label' => $status_label,
+        'next_action' => $next_action,
+        'next_status' => $next_status,
+    ]);
+}
+add_action('wp_ajax_aapg_iframe_set_post_status', 'aapg_iframe_ajax_set_post_status');
 
 /**
  * AJAX handler: save Research Center post content from the rich editor.
