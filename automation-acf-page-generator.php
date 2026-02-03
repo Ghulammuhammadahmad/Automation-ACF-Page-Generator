@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Automation ACF Page Generator (OpenAI)
  * Description: Generates a child page from an Elementor template category and populates ACF fields using OpenAI JSON Schema.
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: CSC Dallas Workspace
  * Requires at least: 6.0
  * Requires PHP: 7.4

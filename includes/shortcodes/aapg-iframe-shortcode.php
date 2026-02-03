@@ -107,7 +107,7 @@ function aapg_iframe_shortcode($atts) {
         'title="%s" ' .
         'sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-modals allow-top-navigation">' .
         '</iframe>' .
-        '<div class="aapg-iframe-info" style="margin-top: 8px; font-size: 12px; color: #666;">' .
+        '<div class="aapg-iframe-info" style="margin-top: 8px; font-size: 13px; color: #666;">' .
         '<p>%s: <a href="%s" target="_blank">%s</a></p>' .
         '</div>',
         esc_url($page_url),
@@ -121,17 +121,20 @@ function aapg_iframe_shortcode($atts) {
         esc_html(get_the_title($page_id))
     );
 
-    // Publish / Unpublish bar (when user can edit)
+    // Publish / Unpublish bar (when user can edit) - shown at top
     $publish_bar_html = '';
     if (current_user_can('edit_post', $page_id)) {
         $publish_bar_html = aapg_iframe_get_publish_bar_html($page_id);
     }
 
-    // Edit with AI box (before AI Generation Information) – uses stored prompt id, ACF group, stored prompt; user only adds edit prompt and page type
+    // Add AI generation info box - shown after iframe
+    $ai_info_html = aapg_get_generation_info_box($page_id);
+
+    // Edit with AI box - shown after AI info
     $edit_with_ai_html = aapg_get_edit_with_ai_box($page_id);
 
-    // Add AI generation info box
-    $ai_info_html = aapg_get_generation_info_box($page_id);
+    // Page images box - shown after Edit with AI
+    $page_images_html = aapg_get_page_images_box($page_id);
 
     // For hub/stub: add custom ACF edit form in shortcode output (nothing is added to the embedded page)
     $acf_form_html = '';
@@ -144,7 +147,8 @@ function aapg_iframe_shortcode($atts) {
         $research_editor_html = aapg_iframe_get_research_content_editor_html($page_id);
     }
 
-    return $iframe_html . $publish_bar_html . $edit_with_ai_html . $ai_info_html . $acf_form_html . $research_editor_html;
+    // New order: 1. Publish status, 2. iframe, 3. AI info, 4. Edit with AI, 5. Page images, 6. Edit content
+    return $publish_bar_html . $iframe_html . $ai_info_html . $edit_with_ai_html . $page_images_html . $acf_form_html . $research_editor_html;
 }
 add_shortcode('aapg_iframe', 'aapg_iframe_shortcode');
 
@@ -258,30 +262,37 @@ function aapg_get_edit_with_ai_box($page_id) {
     }
     $prompt_id = get_post_meta($page_id, 'aapg_prompt_id', true);
     $acf_group_id = get_post_meta($page_id, 'aapg_acf_group_id', true);
+    $stored_page_type = get_post_meta($page_id, 'aapg_page_type', true);
     $post = get_post($page_id);
     $post_type = $post ? $post->post_type : 'page';
     // Show for hub/stub (have prompt_id + acf_group_id) or research (have prompt_id; post can be any type)
     if (empty($prompt_id)) {
         return '';
     }
+    
+    // Default to stub if no page type is stored
+    if (empty($stored_page_type) || !in_array($stored_page_type, ['hub', 'stub', 'research'], true)) {
+        $stored_page_type = 'stub';
+    }
+    
     $nonce = wp_create_nonce('aapg_iframe_edit_with_ai_' . $page_id);
     $ajaxurl = admin_url('admin-ajax.php');
 
     $html = '<div class="aapg-edit-with-ai-box" id="aapg-edit-with-ai-box">';
-    $html .= '<div class="aapg-edit-with-ai-header">';
-    $html .= '<span class="aapg-edit-with-ai-icon" aria-hidden="true">✎</span>';
-    $html .= '<span class="aapg-edit-with-ai-title">' . esc_html__('Edit with AI', 'aapg') . '</span>';
+    $html .= '<div class="aapg-edit-with-ai-header" id="aapg-edit-with-ai-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="aapg-edit-with-ai-body">';
+    $html .= '<span class="aapg-edit-with-ai-title-text"><span class="aapg-edit-with-ai-icon" aria-hidden="true">✎</span> ' . esc_html__('Edit with AI', 'aapg') . '</span>';
+    $html .= '<span class="aapg-toggle-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>';
     $html .= '</div>';
-    $html .= '<div class="aapg-edit-with-ai-body">';
+    $html .= '<div class="aapg-edit-with-ai-body" id="aapg-edit-with-ai-body" style="display:none;">';
     $html .= '<p class="aapg-edit-with-ai-desc">' . esc_html__('Describe how you want to change the content. The current content and stored prompt will be used automatically.', 'aapg') . '</p>';
     $html .= '<div class="aapg-edit-with-ai-form-wrap">';
     $html .= '<form id="aapg-edit-with-ai-form" class="aapg-edit-with-ai-form" data-page-id="' . esc_attr((string) $page_id) . '" data-ajaxurl="' . esc_attr($ajaxurl) . '" data-nonce="' . esc_attr($nonce) . '" data-post-type="' . esc_attr($post_type) . '">';
     $html .= '<div class="aapg-edit-with-ai-row aapg-edit-with-ai-row-type">';
     $html .= '<label class="aapg-edit-with-ai-label">' . esc_html__('Page type', 'aapg') . '</label>';
     $html .= '<div class="aapg-edit-with-ai-type-options">';
-    $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="hub" /> ' . esc_html__('Hub', 'aapg') . '</label>';
-    $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="stub" checked="checked" /> ' . esc_html__('Stub', 'aapg') . '</label>';
-    $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="research" /> ' . esc_html__('Research Center', 'aapg') . '</label>';
+    $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="hub"' . ($stored_page_type === 'hub' ? ' checked="checked"' : '') . ' /> ' . esc_html__('Hub', 'aapg') . '</label>';
+    $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="stub"' . ($stored_page_type === 'stub' ? ' checked="checked"' : '') . ' /> ' . esc_html__('Stub', 'aapg') . '</label>';
+    $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="research"' . ($stored_page_type === 'research' ? ' checked="checked"' : '') . ' /> ' . esc_html__('Research Center', 'aapg') . '</label>';
     $html .= '</div></div>';
     $html .= '<div class="aapg-edit-with-ai-row">';
     $html .= '<label class="aapg-edit-with-ai-label" for="aapg-edit-prompt">' . esc_html__('Edit prompt', 'aapg') . '</label>';
@@ -353,23 +364,36 @@ function aapg_get_generation_info_box($page_id) {
     $url_resolution_table = get_post_meta($page_id, 'aapg_url_resolution_table', true);
     $generation_time = get_post_meta($page_id, 'aapg_generation_time', true);
     $acf_group_id = get_post_meta($page_id, 'aapg_acf_group_id', true);
+    $seo_master_launch_request = get_post_meta($page_id, 'aapg_seo_master_launch_request', true);
+    $page_type = get_post_meta($page_id, 'aapg_page_type', true);
     
     // Get post creation date
     $post = get_post($page_id);
     $created_date = $post ? $post->post_date : '';
     
     $html = '<div class="aapg-ai-info-box" style="margin: 20px 0; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9;">';
-    $html .= '<div class="aapg-ai-info-header" style="padding: 12px 15px; background: #0073aa; color: white; border-radius: 6px 6px 0 0; font-weight: 600; display: flex; align-items: center;">';
-    $html .= '<span class="dashicons dashicons-info" style="margin-right: 8px;"></span>';
-    $html .= esc_html__('AI Generation Information', 'aapg');
+    $html .= '<div class="aapg-ai-info-header" id="aapg-ai-info-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="aapg-ai-info-content" style="padding: 14px 18px; background: #f6f7f7; color: #1d2327; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; border-bottom: 1px solid #c3c4c7;">';
+    $html .= '<span><span class="dashicons dashicons-info" style="margin-right: 8px;"></span>' . esc_html__('AI Generation Information', 'aapg') . '</span>';
+    $html .= '<span class="aapg-toggle-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>';
     $html .= '</div>';
     
-    $html .= '<div class="aapg-ai-info-content" style="padding: 15px;">';
+    $html .= '<div class="aapg-ai-info-content" id="aapg-ai-info-content" style="padding: 15px; display: none;">';
     
     // Basic info
     $html .= '<div class="aapg-info-section" style="margin-bottom: 15px;">';
-    $html .= '<h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">' . esc_html__('Generation Details', 'aapg') . '</h4>';
+    $html .= '<h4 class="aapg-info-heading" style="margin: 0 0 8px 0; color: #333; font-size: 14px;">' . esc_html__('Generation Details', 'aapg') . '</h4>';
     $html .= '<table class="aapg-info-table" style="width: 100%; border-collapse: collapse;">';
+    
+    if ($page_type) {
+        $page_type_label = ucfirst($page_type);
+        if ($page_type === 'research') {
+            $page_type_label = __('Research Center', 'aapg');
+        }
+        $html .= '<tr>';
+        $html .= '<td style="padding: 4px 8px; font-weight: 600; color: #555; width: 140px; vertical-align: top;">' . esc_html__('Page Type:', 'aapg') . '</td>';
+        $html .= '<td style="padding: 4px 8px;"><span style="background: #dcdcde; color: #1d2327; padding: 3px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase;">' . esc_html($page_type_label) . '</span></td>';
+        $html .= '</tr>';
+    }
     
     if ($prompt_id) {
         $html .= '<tr>';
@@ -428,6 +452,16 @@ function aapg_get_generation_info_box($page_id) {
         $html .= '</div>';
     }
     
+    // SEO Master Launch Request
+    if ($seo_master_launch_request) {
+        $html .= '<div class="aapg-info-section" style="margin-bottom: 15px;">';
+        $html .= '<h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">' . esc_html__('SEO Master Launch Request (SEO Bundle Planner)', 'aapg') . '</h4>';
+        $html .= '<div class="aapg-seo-master-content" style="background: #fff; border: 1px solid #ccc; padding: 12px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;">';
+        $html .= esc_html($seo_master_launch_request);
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+    
     // // URL Resolution Table
     // if ($url_resolution_table && is_array($url_resolution_table) && !empty($url_resolution_table)) {
     //     $html .= '<div class="aapg-info-section">';
@@ -457,6 +491,224 @@ function aapg_get_generation_info_box($page_id) {
     
     $html .= '</div>'; // Close content div
     $html .= '</div>'; // Close info box
+    
+    return $html;
+}
+
+/**
+ * Extract all images from Elementor data
+ *
+ * @param int $page_id The page ID.
+ * @return array Array of image data (id, url, alt, title)
+ */
+function aapg_extract_elementor_images($page_id) {
+    $elementor_data = get_post_meta($page_id, '_elementor_data', true);
+    
+    if (empty($elementor_data)) {
+        return [];
+    }
+    
+    // Decode JSON data
+    $data = json_decode($elementor_data, true);
+    if (!is_array($data)) {
+        return [];
+    }
+    
+    $images = [];
+    
+    // Recursive function to find images
+    $find_images = function($element) use (&$find_images, &$images) {
+        if (!is_array($element)) {
+            return;
+        }
+        
+        // Check for image widget
+        if (isset($element['widgetType']) && $element['widgetType'] === 'image') {
+            if (isset($element['settings']['image']['id']) && !empty($element['settings']['image']['id'])) {
+                $image_id = $element['settings']['image']['id'];
+                $image_url = $element['settings']['image']['url'] ?? wp_get_attachment_url($image_id);
+                
+                if ($image_url) {
+                    $images[] = [
+                        'id' => $image_id,
+                        'url' => $image_url,
+                        'alt' => get_post_meta($image_id, '_wp_attachment_image_alt', true),
+                        'title' => get_the_title($image_id),
+                    ];
+                }
+            }
+        }
+        
+        // Check for background images in settings
+        if (isset($element['settings'])) {
+            $settings = $element['settings'];
+            
+            // Background image
+            if (isset($settings['background_image']['id']) && !empty($settings['background_image']['id'])) {
+                $image_id = $settings['background_image']['id'];
+                $image_url = $settings['background_image']['url'] ?? wp_get_attachment_url($image_id);
+                
+                if ($image_url) {
+                    $images[] = [
+                        'id' => $image_id,
+                        'url' => $image_url,
+                        'alt' => get_post_meta($image_id, '_wp_attachment_image_alt', true),
+                        'title' => get_the_title($image_id),
+                        'type' => 'background',
+                    ];
+                }
+            }
+            
+            // Background overlay image
+            if (isset($settings['background_overlay_image']['id']) && !empty($settings['background_overlay_image']['id'])) {
+                $image_id = $settings['background_overlay_image']['id'];
+                $image_url = $settings['background_overlay_image']['url'] ?? wp_get_attachment_url($image_id);
+                
+                if ($image_url) {
+                    $images[] = [
+                        'id' => $image_id,
+                        'url' => $image_url,
+                        'alt' => get_post_meta($image_id, '_wp_attachment_image_alt', true),
+                        'title' => get_the_title($image_id),
+                        'type' => 'background_overlay',
+                    ];
+                }
+            }
+        }
+        
+        // Recursively check elements
+        if (isset($element['elements']) && is_array($element['elements'])) {
+            foreach ($element['elements'] as $child) {
+                $find_images($child);
+            }
+        }
+    };
+    
+    // Start recursive search
+    foreach ($data as $element) {
+        $find_images($element);
+    }
+    
+    // Remove duplicates based on image ID
+    $unique_images = [];
+    $seen_ids = [];
+    
+    foreach ($images as $image) {
+        if (!in_array($image['id'], $seen_ids)) {
+            $unique_images[] = $image;
+            $seen_ids[] = $image['id'];
+        }
+    }
+    
+    return $unique_images;
+}
+
+/**
+ * Generate page images display box
+ *
+ * @param int $page_id The page ID.
+ * @return string HTML for the images box.
+ */
+function aapg_get_page_images_box($page_id) {
+    $images = aapg_extract_elementor_images($page_id);
+    
+    if (empty($images)) {
+        return '';
+    }
+    
+    $can_edit = current_user_can('edit_post', $page_id);
+    $nonce = wp_create_nonce('aapg_update_page_images_' . $page_id);
+    $ajaxurl = admin_url('admin-ajax.php');
+    
+    $html = '<div class="aapg-page-images-box" style="margin: 20px 0; border: 1px solid #ddd; border-radius: 6px; background: #f9f9f9;">';
+    $html .= '<div class="aapg-page-images-header" id="aapg-page-images-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="aapg-page-images-content" style="padding: 14px 18px; background: #f6f7f7; color: #1d2327; border-radius: 6px 6px 0 0; font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; border-bottom: 1px solid #c3c4c7;">';
+    $html .= '<span><span class="dashicons dashicons-format-gallery" style="margin-right: 8px;"></span>' . sprintf(esc_html__('Page Images (%d)', 'aapg'), count($images)) . '</span>';
+    $html .= '<span class="aapg-toggle-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>';
+    $html .= '</div>';
+    
+    $html .= '<div class="aapg-page-images-content" id="aapg-page-images-content" style="padding: 15px; display: none;">';
+    
+    if ($can_edit) {
+        $html .= '<div id="aapg-images-form" data-page-id="' . esc_attr($page_id) . '" data-ajaxurl="' . esc_attr($ajaxurl) . '" data-nonce="' . esc_attr($nonce) . '">';
+    }
+    
+    $html .= '<div class="aapg-images-grid" id="aapg-images-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px;">';
+    
+    foreach ($images as $index => $image) {
+        $type_label = isset($image['type']) ? ' (' . ucfirst(str_replace('_', ' ', $image['type'])) . ')' : '';
+        $html .= '<div class="aapg-image-item" data-image-id="' . esc_attr($image['id']) . '" data-image-index="' . esc_attr($index) . '" style="border: 1px solid #ddd; border-radius: 4px; overflow: hidden; background: #fff; position: relative;">';
+        
+        if ($can_edit) {
+            $html .= '<button type="button" class="aapg-image-replace-btn" data-image-id="' . esc_attr($image['id']) . '" style="position: absolute; top: 5px; right: 5px; background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 3px; padding: 5px 8px; font-size: 12px; cursor: pointer; z-index: 10;">Replace</button>';
+        }
+        
+        $html .= '<div class="aapg-image-wrapper" style="aspect-ratio: 16/9; overflow: hidden; background: #f0f0f0;">';
+        $html .= '<img class="aapg-image-preview" src="' . esc_url($image['url']) . '" alt="' . esc_attr($image['alt']) . '" style="width: 100%; height: 100%; object-fit: cover;" loading="lazy" />';
+        $html .= '</div>';
+        $html .= '<div class="aapg-image-info" style="padding: 8px; font-size: 12px;">';
+        
+        if (!empty($image['title'])) {
+            $html .= '<div class="aapg-image-title" style="font-weight: 600; margin-bottom: 4px; color: #333;">' . esc_html($image['title']) . esc_html($type_label) . '</div>';
+        }
+        
+        if (!empty($image['alt'])) {
+            $html .= '<div class="aapg-image-alt" style="color: #666; margin-bottom: 4px;">Alt: ' . esc_html($image['alt']) . '</div>';
+        }
+        
+        $html .= '<div class="aapg-image-id" style="color: #999; font-size: 12px;">ID: <span class="aapg-current-image-id">' . esc_html($image['id']) . '</span></div>';
+        $html .= '<a href="' . esc_url($image['url']) . '" target="_blank" class="aapg-image-view" style="display: inline-block; margin-top: 6px; color: #2271b1; text-decoration: none; font-size: 12px;">View Full Size →</a>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
+    
+    $html .= '</div>'; // Close grid
+    
+    if ($can_edit) {
+        $html .= '<div class="aapg-images-actions" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd; display: flex; gap: 10px; align-items: center;">';
+        $html .= '<button type="button" id="aapg-update-images-btn" class="aapg-update-images-btn" style="padding: 10px 20px; background: #2EA3F2; color: #fff; border: 1px solid #c3c4c7; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 14px;">Update Images</button>';
+        $html .= '<span id="aapg-images-status" class="aapg-images-status" style="font-size: 13px;"></span>';
+        $html .= '</div>';
+        $html .= '</div>'; // Close form
+    }
+    
+    $html .= '</div>'; // Close content
+    $html .= '</div>'; // Close box
+    
+    // Add media upload modal
+    if ($can_edit) {
+        $html .= '<div id="aapg-media-upload-modal" class="aapg-media-upload-modal" style="display:none;">';
+        $html .= '<div class="aapg-modal-overlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 9998;"></div>';
+        $html .= '<div class="aapg-modal-content" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 8px; padding: 25px; max-width: 500px; width: 90%; z-index: 9999; box-shadow: 0 10px 40px rgba(0,0,0,0.3);">';
+        $html .= '<div class="aapg-modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #f0f0f0;">';
+        $html .= '<h3 style="margin: 0; color: #333; font-size: 16px;">Replace Image</h3>';
+        $html .= '<button type="button" class="aapg-modal-close" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #666; line-height: 1;">&times;</button>';
+        $html .= '</div>';
+        $html .= '<div class="aapg-modal-body">';
+        $html .= '<div class="aapg-upload-area" style="border: 2px dashed #ccc; border-radius: 8px; padding: 40px 20px; text-align: center; background: #fafafa; margin-bottom: 20px;">';
+        $html .= '<input type="file" id="aapg-image-upload-input" accept="image/*" style="display: none;">';
+        $html .= '<label for="aapg-image-upload-input" style="cursor: pointer; display: block;">';
+        $html .= '<span class="dashicons dashicons-cloud-upload" style="font-size: 24px; color: #787c82; width: 24px; height: 24px;"></span>';
+        $html .= '<p style="margin: 10px 0 5px; font-size: 14px; color: #333; font-weight: 600;">Click to upload or drag and drop</p>';
+        $html .= '<p style="margin: 0; font-size: 13px; color: #999;">PNG, JPG, GIF, WebP up to 10MB</p>';
+        $html .= '</label>';
+        $html .= '</div>';
+        $html .= '<div id="aapg-upload-preview" class="aapg-upload-preview" style="display: none; margin-bottom: 15px;">';
+        $html .= '<img id="aapg-preview-image" style="max-width: 100%; border-radius: 4px; border: 1px solid #ddd;" />';
+        $html .= '</div>';
+        $html .= '<div id="aapg-upload-progress" class="aapg-upload-progress" style="display: none; margin-bottom: 15px;">';
+        $html .= '<div style="background: #f0f0f0; height: 6px; border-radius: 3px; overflow: hidden;">';
+        $html .= '<div id="aapg-progress-bar" style="background: #787c82; height: 100%; width: 0%; transition: width 0.3s;"></div>';
+        $html .= '</div>';
+        $html .= '<p id="aapg-upload-status" style="margin: 8px 0 0; font-size: 13px; color: #666; text-align: center;">Uploading...</p>';
+        $html .= '</div>';
+        $html .= '<div class="aapg-modal-actions" style="display: flex; gap: 10px; justify-content: flex-end;">';
+        $html .= '<button type="button" class="aapg-modal-cancel" style="padding: 8px 16px; background: #f0f0f0; color: #333; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">Cancel</button>';
+        $html .= '<button type="button" id="aapg-modal-upload-btn" class="aapg-modal-upload" style="padding: 8px 16px; background: #f0f0f1; color: #1d2327; border: 1px solid #c3c4c7; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 14px;" disabled>Upload</button>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+        $html .= '</div>';
+    }
     
     return $html;
 }
@@ -507,10 +759,10 @@ function aapg_iframe_get_acf_edit_form_html($page_id) {
     $html = aapg_iframe_get_acf_form_css();
 
     $html .= '<div class="aapg-acf-edit-form-wrapper">';
-    $html .= '<div class="aapg-acf-edit-form-inner" id="aapg-acf-edit-form-inner">';
+    $html .= '<div class="aapg-acf-edit-form-inner aapg-form-collapsed" id="aapg-acf-edit-form-inner">';
     $html .= '<div class="aapg-acf-edit-form-header" id="aapg-acf-edit-form-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="aapg-acf-edit-form-body">';
     $html .= '<span class="aapg-acf-edit-form-title-text">' . esc_html(sprintf(__('Edit AI content fields (%s)', 'aapg'), $group_title)) . '</span>';
-    $html .= '<span class="aapg-toggle-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-chevron-down"><polyline points="6 9 12 15 18 9"></polyline></svg></span>';
+    $html .= '<span class="aapg-toggle-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>';
     $html .= '</div>';
     $html .= '<div class="aapg-acf-edit-form-body" id="aapg-acf-edit-form-body">';
     $html .= '<form id="aapg-iframe-acf-form" class="aapg-acf-edit-form" method="post" action="" data-ajaxurl="' . esc_attr($ajaxurl) . '" data-nonce="' . esc_attr($nonce) . '" data-post-id="' . esc_attr((string) $page_id) . '">';
@@ -568,7 +820,7 @@ function aapg_iframe_get_research_content_editor_html($page_id) {
     $html .= '<div class="aapg-research-editor-inner" id="aapg-research-editor-inner">';
     $html .= '<div class="aapg-research-editor-header" id="aapg-research-editor-toggle" role="button" tabindex="0" aria-expanded="true" aria-controls="aapg-research-editor-body">';
     $html .= '<span class="aapg-research-editor-title-text">' . esc_html__('Edit Research Center content', 'aapg') . '</span>';
-    $html .= '<span class="aapg-toggle-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-chevron-down"><polyline points="6 9 12 15 18 9"></polyline></svg></span>';
+    $html .= '<span class="aapg-toggle-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></span>';
     $html .= '</div>';
     $html .= '<div class="aapg-research-editor-body" id="aapg-research-editor-body">';
     $html .= '<form id="aapg-research-content-form" class="aapg-research-content-form" method="post" action="" data-ajaxurl="' . esc_attr($ajaxurl) . '" data-nonce="' . esc_attr($nonce) . '" data-post-id="' . esc_attr((string) $page_id) . '">';
@@ -687,7 +939,7 @@ function aapg_iframe_render_repeater_field($input_name, $value, $field) {
 function aapg_iframe_render_repeater_row($base_name, $index, $row_data, $sub_fields) {
     $html = '<div class="aapg-repeater-row aapg-row-collapsed" data-index="' . esc_attr((string) $index) . '">';
     $html .= '<div class="aapg-repeater-row-header" role="button" tabindex="0" aria-expanded="false">';
-    $html .= '<span class="aapg-repeater-row-header-left"><span class="aapg-repeater-row-toggle" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-chevron-right"><polyline points="9 18 15 12 9 6"></polyline></svg></span><span class="aapg-repeater-row-number">' . esc_html__('Row', 'aapg') . ' ' . ($index + 1) . '</span></span>';
+    $html .= '<span class="aapg-repeater-row-header-left"><span class="aapg-repeater-row-toggle" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg></span><span class="aapg-repeater-row-number">' . esc_html__('Row', 'aapg') . ' ' . ($index + 1) . '</span></span>';
     $html .= '<button type="button" class="aapg-repeater-remove-row" title="' . esc_attr__('Remove row', 'aapg') . '"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M11.7612 9.99893L19.6305 2.14129C19.8657 1.90606 19.9979 1.58701 19.9979 1.25434C19.9979 0.921668 19.8657 0.602622 19.6305 0.367388C19.3953 0.132153 19.0763 0 18.7437 0C18.411 0 18.092 0.132153 17.8568 0.367388L10 8.23752L2.14319 0.367388C1.90799 0.132153 1.58897 2.95361e-07 1.25634 2.97839e-07C0.923701 3.00318e-07 0.604689 0.132153 0.36948 0.367388C0.134271 0.602622 0.00213201 0.921668 0.002132 1.25434C0.002132 1.58701 0.134271 1.90606 0.36948 2.14129L8.23878 9.99893L0.36948 17.8566C0.252404 17.9727 0.159479 18.1109 0.0960643 18.2631C0.0326494 18.4153 0 18.5786 0 18.7435C0 18.9084 0.0326494 19.0717 0.0960643 19.224C0.159479 19.3762 0.252404 19.5143 0.36948 19.6305C0.4856 19.7476 0.623751 19.8405 0.775965 19.9039C0.928178 19.9673 1.09144 20 1.25634 20C1.42123 20 1.5845 19.9673 1.73671 19.9039C1.88892 19.8405 2.02708 19.7476 2.14319 19.6305L10 11.7603L17.8568 19.6305C17.9729 19.7476 18.1111 19.8405 18.2633 19.9039C18.4155 19.9673 18.5788 20 18.7437 20C18.9086 20 19.0718 19.9673 19.224 19.9039C19.3763 19.8405 19.5144 19.7476 19.6305 19.6305C19.7476 19.5143 19.8405 19.3762 19.9039 19.224C19.9674 19.0717 20 18.9084 20 18.7435C20 18.5786 19.9674 18.4153 19.9039 18.2631C19.8405 18.1109 19.7476 17.9727 19.6305 17.8566L11.7612 9.99893Z" fill="black"/></svg></button>';
     $html .= '</div>';
     $html .= '<div class="aapg-repeater-row-fields">';
@@ -953,6 +1205,195 @@ function aapg_iframe_ajax_save_research_content() {
     wp_send_json_success(['message' => __('Content saved.', 'aapg')]);
 }
 add_action('wp_ajax_aapg_iframe_save_research_content', 'aapg_iframe_ajax_save_research_content');
+
+/**
+ * AJAX handler: update page images in Elementor data.
+ */
+function aapg_iframe_ajax_update_page_images() {
+    $post_id = isset($_POST['post_id']) ? absint($_POST['post_id']) : 0;
+    if (!$post_id) {
+        wp_send_json_error(['message' => __('Invalid post.', 'aapg')]);
+    }
+    if (!current_user_can('edit_post', $post_id)) {
+        wp_send_json_error(['message' => __('You do not have permission to edit this post.', 'aapg')]);
+    }
+    $nonce_key = 'aapg_update_page_images_' . $post_id;
+    if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), $nonce_key)) {
+        wp_send_json_error(['message' => __('Security check failed.', 'aapg')]);
+    }
+    
+    $image_replacements = isset($_POST['image_replacements']) ? json_decode(wp_unslash($_POST['image_replacements']), true) : [];
+    if (empty($image_replacements) || !is_array($image_replacements)) {
+        wp_send_json_error(['message' => __('No image replacements provided.', 'aapg')]);
+    }
+    
+    // Get current Elementor data
+    $elementor_data = get_post_meta($post_id, '_elementor_data', true);
+    if (empty($elementor_data)) {
+        wp_send_json_error(['message' => __('No Elementor data found.', 'aapg')]);
+    }
+    
+    // Decode JSON data
+    $data = json_decode($elementor_data, true);
+    if (!is_array($data)) {
+        wp_send_json_error(['message' => __('Invalid Elementor data.', 'aapg')]);
+    }
+    
+    // Recursive function to update images
+    $update_images = function(&$element) use (&$update_images, $image_replacements) {
+        if (!is_array($element)) {
+            return;
+        }
+        
+        // Check for image widget
+        if (isset($element['widgetType']) && $element['widgetType'] === 'image') {
+            if (isset($element['settings']['image']['id'])) {
+                $old_id = (string) $element['settings']['image']['id'];
+                if (isset($image_replacements[$old_id])) {
+                    $new_id = absint($image_replacements[$old_id]);
+                    $element['settings']['image']['id'] = $new_id;
+                    $element['settings']['image']['url'] = wp_get_attachment_url($new_id);
+                }
+            }
+        }
+        
+        // Check for background images in settings
+        if (isset($element['settings'])) {
+            // Background image
+            if (isset($element['settings']['background_image']['id'])) {
+                $old_id = (string) $element['settings']['background_image']['id'];
+                if (isset($image_replacements[$old_id])) {
+                    $new_id = absint($image_replacements[$old_id]);
+                    $element['settings']['background_image']['id'] = $new_id;
+                    $element['settings']['background_image']['url'] = wp_get_attachment_url($new_id);
+                }
+            }
+            
+            // Background overlay image
+            if (isset($element['settings']['background_overlay_image']['id'])) {
+                $old_id = (string) $element['settings']['background_overlay_image']['id'];
+                if (isset($image_replacements[$old_id])) {
+                    $new_id = absint($image_replacements[$old_id]);
+                    $element['settings']['background_overlay_image']['id'] = $new_id;
+                    $element['settings']['background_overlay_image']['url'] = wp_get_attachment_url($new_id);
+                }
+            }
+        }
+        
+        // Recursively check elements
+        if (isset($element['elements']) && is_array($element['elements'])) {
+            foreach ($element['elements'] as &$child) {
+                $update_images($child);
+            }
+        }
+    };
+    
+    // Update all elements
+    foreach ($data as &$element) {
+        $update_images($element);
+    }
+    
+    // Save updated Elementor data
+    $updated_json = wp_json_encode($data, JSON_UNESCAPED_UNICODE);
+    update_post_meta($post_id, '_elementor_data', wp_slash($updated_json));
+    
+    // Clear Elementor cache if available
+    if (class_exists('\Elementor\Plugin')) {
+        \Elementor\Plugin::$instance->files_manager->clear_cache();
+    }
+    
+    wp_send_json_success([
+        'message' => __('Images updated successfully.', 'aapg'),
+        'updated_count' => count($image_replacements)
+    ]);
+}
+add_action('wp_ajax_aapg_iframe_update_page_images', 'aapg_iframe_ajax_update_page_images');
+
+/**
+ * AJAX handler: upload image to media library (for page images replace).
+ */
+function aapg_iframe_ajax_upload_image() {
+    $post_id = isset($_POST['post_id']) ? absint($_POST['post_id']) : 0;
+    if (!$post_id) {
+        wp_send_json_error(['message' => __('Invalid post.', 'aapg')]);
+    }
+    if (!current_user_can('edit_post', $post_id)) {
+        wp_send_json_error(['message' => __('You do not have permission to edit this post.', 'aapg')]);
+    }
+    $nonce_key = 'aapg_update_page_images_' . $post_id;
+    if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['nonce'])), $nonce_key)) {
+        wp_send_json_error(['message' => __('Security check failed.', 'aapg')]);
+    }
+    
+    if (empty($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        $msg = __('No file uploaded or upload error.', 'aapg');
+        if (!empty($_FILES['image']['error'])) {
+            switch ($_FILES['image']['error']) {
+                case UPLOAD_ERR_INI_SIZE:
+                case UPLOAD_ERR_FORM_SIZE:
+                    $msg = __('File is too large.', 'aapg');
+                    break;
+                case UPLOAD_ERR_PARTIAL:
+                    $msg = __('File was only partially uploaded.', 'aapg');
+                    break;
+                case UPLOAD_ERR_NO_FILE:
+                    $msg = __('No file was uploaded.', 'aapg');
+                    break;
+            }
+        }
+        wp_send_json_error(['message' => $msg]);
+    }
+    
+    require_once ABSPATH . 'wp-admin/includes/image.php';
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    require_once ABSPATH . 'wp-admin/includes/media.php';
+    
+    $file = $_FILES['image'];
+    
+    // Validate file type
+    $allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    $finfo = wp_check_filetype($file['name']);
+    if (empty($finfo['type']) || !in_array($finfo['type'], $allowed, true)) {
+        wp_send_json_error(['message' => __('Invalid file type. Allowed: JPG, PNG, GIF, WebP.', 'aapg')]);
+    }
+    
+    // 10MB limit
+    if ($file['size'] > 10 * 1024 * 1024) {
+        wp_send_json_error(['message' => __('File size must be less than 10MB.', 'aapg')]);
+    }
+    
+    $upload = wp_handle_upload($file, ['test_form' => false]);
+    
+    if (isset($upload['error'])) {
+        wp_send_json_error(['message' => $upload['error']]);
+    }
+    
+    $attachment = [
+        'post_mime_type' => $upload['type'],
+        'post_title'     => sanitize_file_name(pathinfo($file['name'], PATHINFO_FILENAME)),
+        'post_content'   => '',
+        'post_status'    => 'inherit',
+    ];
+    
+    $attach_id = wp_insert_attachment($attachment, $upload['file'], $post_id);
+    
+    if (is_wp_error($attach_id)) {
+        wp_send_json_error(['message' => $attach_id->get_error_message()]);
+    }
+    
+    $attach_data = wp_generate_attachment_metadata($attach_id, $upload['file']);
+    if (!is_wp_error($attach_data)) {
+        wp_update_attachment_metadata($attach_id, $attach_data);
+    }
+    
+    $url = wp_get_attachment_url($attach_id);
+    
+    wp_send_json_success([
+        'id'  => $attach_id,
+        'url' => $url,
+    ]);
+}
+add_action('wp_ajax_aapg_iframe_upload_image', 'aapg_iframe_ajax_upload_image');
 
 /**
  * AJAX handler: save ACF field values from iframe form (hub/stub).

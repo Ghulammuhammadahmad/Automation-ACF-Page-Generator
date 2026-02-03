@@ -118,6 +118,54 @@
                 }
             });
         }
+        // Edit with AI collapsible
+        var editAiToggle = document.getElementById('aapg-edit-with-ai-toggle');
+        var editAiBody = document.getElementById('aapg-edit-with-ai-body');
+        if (editAiToggle && editAiBody) {
+            editAiToggle.addEventListener('click', function() {
+                var isCollapsed = editAiBody.style.display === 'none';
+                editAiBody.style.display = isCollapsed ? 'block' : 'none';
+                editAiToggle.setAttribute('aria-expanded', isCollapsed ? 'true' : 'false');
+            });
+            editAiToggle.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    editAiToggle.click();
+                }
+            });
+        }
+        // AI Generation Information collapsible
+        var aiInfoToggle = document.getElementById('aapg-ai-info-toggle');
+        var aiInfoContent = document.getElementById('aapg-ai-info-content');
+        if (aiInfoToggle && aiInfoContent) {
+            aiInfoToggle.addEventListener('click', function() {
+                var isCollapsed = aiInfoContent.style.display === 'none';
+                aiInfoContent.style.display = isCollapsed ? 'block' : 'none';
+                aiInfoToggle.setAttribute('aria-expanded', isCollapsed ? 'true' : 'false');
+            });
+            aiInfoToggle.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    aiInfoToggle.click();
+                }
+            });
+        }
+        // Page Images collapsible
+        var pageImagesToggle = document.getElementById('aapg-page-images-toggle');
+        var pageImagesContent = document.getElementById('aapg-page-images-content');
+        if (pageImagesToggle && pageImagesContent) {
+            pageImagesToggle.addEventListener('click', function() {
+                var isCollapsed = pageImagesContent.style.display === 'none';
+                pageImagesContent.style.display = isCollapsed ? 'block' : 'none';
+                pageImagesToggle.setAttribute('aria-expanded', isCollapsed ? 'true' : 'false');
+            });
+            pageImagesToggle.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    pageImagesToggle.click();
+                }
+            });
+        }
         document.addEventListener('click', function(e) {
             var header = e.target.closest('.aapg-repeater-row-header');
             if (!header || e.target.classList.contains('aapg-repeater-remove-row')) return;
@@ -433,6 +481,228 @@
         });
     }
 
+    function initPageImages() {
+        var form = document.getElementById('aapg-images-form');
+        if (!form) return;
+        
+        var modal = document.getElementById('aapg-media-upload-modal');
+        var modalOverlay = modal ? modal.querySelector('.aapg-modal-overlay') : null;
+        var modalClose = modal ? modal.querySelector('.aapg-modal-close') : null;
+        var modalCancel = modal ? modal.querySelector('.aapg-modal-cancel') : null;
+        var fileInput = document.getElementById('aapg-image-upload-input');
+        var uploadBtn = document.getElementById('aapg-modal-upload-btn');
+        var previewContainer = document.getElementById('aapg-upload-preview');
+        var previewImage = document.getElementById('aapg-preview-image');
+        var progressContainer = document.getElementById('aapg-upload-progress');
+        var progressBar = document.getElementById('aapg-progress-bar');
+        var uploadStatus = document.getElementById('aapg-upload-status');
+        var updateBtn = document.getElementById('aapg-update-images-btn');
+        var statusEl = document.getElementById('aapg-images-status');
+        
+        var currentImageId = null;
+        var selectedFile = null;
+        var imageReplacements = {};
+        
+        // Handle replace button clicks
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('aapg-image-replace-btn')) {
+                currentImageId = e.target.getAttribute('data-image-id');
+                selectedFile = null;
+                if (previewContainer) previewContainer.style.display = 'none';
+                if (uploadBtn) uploadBtn.disabled = true;
+                if (modal) modal.style.display = 'block';
+            }
+        });
+        
+        // Close modal
+        function closeModal() {
+            if (modal) modal.style.display = 'none';
+            currentImageId = null;
+            selectedFile = null;
+            if (fileInput) fileInput.value = '';
+            if (previewContainer) previewContainer.style.display = 'none';
+            if (progressContainer) progressContainer.style.display = 'none';
+            if (uploadBtn) uploadBtn.disabled = true;
+        }
+        
+        if (modalOverlay) modalOverlay.addEventListener('click', closeModal);
+        if (modalClose) modalClose.addEventListener('click', closeModal);
+        if (modalCancel) modalCancel.addEventListener('click', closeModal);
+        
+        // Handle file selection
+        if (fileInput) {
+            fileInput.addEventListener('change', function(e) {
+                var file = e.target.files[0];
+                if (!file) return;
+                
+                // Validate file type
+                if (!file.type.match('image.*')) {
+                    alert('Please select an image file.');
+                    return;
+                }
+                
+                // Validate file size (10MB)
+                if (file.size > 10 * 1024 * 1024) {
+                    alert('File size must be less than 10MB.');
+                    return;
+                }
+                
+                selectedFile = file;
+                if (uploadBtn) uploadBtn.disabled = false;
+                
+                // Show preview
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    if (previewImage) previewImage.src = e.target.result;
+                    if (previewContainer) previewContainer.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        // Handle upload button click – use plugin AJAX action (avoids 403 on frontend)
+        if (uploadBtn) {
+            uploadBtn.addEventListener('click', function() {
+                if (!selectedFile || !currentImageId) return;
+                
+                var pageId = form.getAttribute('data-page-id');
+                var ajaxurl = form.getAttribute('data-ajaxurl');
+                var nonce = form.getAttribute('data-nonce');
+                
+                var formData = new FormData();
+                formData.append('action', 'aapg_iframe_upload_image');
+                formData.append('nonce', nonce);
+                formData.append('post_id', pageId);
+                formData.append('image', selectedFile);
+                
+                if (uploadBtn) uploadBtn.disabled = true;
+                if (previewContainer) previewContainer.style.display = 'none';
+                if (progressContainer) progressContainer.style.display = 'block';
+                if (progressBar) progressBar.style.width = '0%';
+                if (uploadStatus) uploadStatus.textContent = 'Uploading...';
+                
+                var xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        var percent = (e.loaded / e.total) * 100;
+                        if (progressBar) progressBar.style.width = percent + '%';
+                    }
+                });
+                
+                xhr.addEventListener('load', function() {
+                    if (xhr.status === 200) {
+                        try {
+                            var response = JSON.parse(xhr.responseText);
+                            if (response.success && response.data && response.data.id) {
+                                var newImageId = response.data.id;
+                                var newImageUrl = response.data.url;
+                                
+                                // Track replacement
+                                imageReplacements[currentImageId] = newImageId;
+                                
+                                // Update UI
+                                var imageItem = document.querySelector('.aapg-image-item[data-image-id="' + currentImageId + '"]');
+                                if (imageItem) {
+                                    var img = imageItem.querySelector('.aapg-image-preview');
+                                    if (img) img.src = newImageUrl;
+                                    
+                                    var idSpan = imageItem.querySelector('.aapg-current-image-id');
+                                    if (idSpan) idSpan.textContent = newImageId;
+                                    
+                                    var viewLink = imageItem.querySelector('.aapg-image-view');
+                                    if (viewLink) viewLink.href = newImageUrl;
+                                    
+                                    imageItem.setAttribute('data-image-id', newImageId);
+                                    var replaceBtn = imageItem.querySelector('.aapg-image-replace-btn');
+                                    if (replaceBtn) replaceBtn.setAttribute('data-image-id', newImageId);
+                                }
+                                
+                                if (uploadStatus) uploadStatus.textContent = 'Upload complete!';
+                                setTimeout(closeModal, 500);
+                            } else {
+                                if (uploadStatus) uploadStatus.textContent = 'Upload failed: ' + (response.data && response.data.message ? response.data.message : 'Unknown error');
+                            }
+                        } catch (err) {
+                            if (uploadStatus) uploadStatus.textContent = 'Upload failed: Invalid response';
+                        }
+                    } else {
+                        if (uploadStatus) uploadStatus.textContent = 'Upload failed: Server returned ' + xhr.status;
+                    }
+                    if (progressContainer) {
+                        setTimeout(function() { progressContainer.style.display = 'none'; }, 2000);
+                    }
+                });
+                
+                xhr.addEventListener('error', function() {
+                    if (uploadStatus) uploadStatus.textContent = 'Upload failed: Network error';
+                    if (progressContainer) {
+                        setTimeout(function() { progressContainer.style.display = 'none'; }, 2000);
+                    }
+                });
+                
+                xhr.open('POST', ajaxurl, true);
+                xhr.send(formData);
+            });
+        }
+        
+        // Handle update images button
+        if (updateBtn) {
+            updateBtn.addEventListener('click', function() {
+                if (Object.keys(imageReplacements).length === 0) {
+                    if (statusEl) {
+                        statusEl.textContent = 'No changes to save.';
+                        statusEl.className = 'aapg-images-status aapg-error';
+                    }
+                    return;
+                }
+                
+                var pageId = form.getAttribute('data-page-id');
+                var ajaxurl = form.getAttribute('data-ajaxurl');
+                var nonce = form.getAttribute('data-nonce');
+                
+                if (updateBtn) updateBtn.disabled = true;
+                if (statusEl) {
+                    statusEl.textContent = 'Updating...';
+                    statusEl.className = 'aapg-images-status';
+                }
+                
+                var data = new FormData();
+                data.append('action', 'aapg_iframe_update_page_images');
+                data.append('nonce', nonce);
+                data.append('post_id', pageId);
+                data.append('image_replacements', JSON.stringify(imageReplacements));
+                
+                fetch(ajaxurl, { method: 'POST', body: data, credentials: 'same-origin' })
+                    .then(function(r) { return r.json(); })
+                    .then(function(res) {
+                        if (statusEl) {
+                            statusEl.className = 'aapg-images-status ' + (res.success ? 'aapg-success' : 'aapg-error');
+                            statusEl.textContent = (res.data && res.data.message) ? res.data.message : (res.success ? 'Images updated.' : 'Update failed.');
+                        }
+                        if (res.success) {
+                            imageReplacements = {};
+                            // Scroll to top
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            // Reload iframe
+                            setTimeout(function() {
+                                if (typeof window.aapgReloadIframe === 'function') {
+                                    window.aapgReloadIframe();
+                                }
+                            }, 500);
+                        }
+                    })
+                    .catch(function() {
+                        if (statusEl) {
+                            statusEl.className = 'aapg-images-status aapg-error';
+                            statusEl.textContent = 'Request failed.';
+                        }
+                    })
+                    .then(function() { if (updateBtn) updateBtn.disabled = false; });
+            });
+        }
+    }
+
     function onReady() {
         initTinyMCE();
         initRepeaters();
@@ -441,6 +711,7 @@
         initAcfForm();
         initResearchContentEditor();
         initEditWithAi();
+        initPageImages();
     }
 
     if (document.readyState === 'loading') {

@@ -346,6 +346,7 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
         // Add automation metadata
         update_post_meta($page_id, 'isGeneratedByAutomation', 'true');
         update_post_meta($page_id, 'aiGenerated', 'true'); // New AI generated meta
+        update_post_meta($page_id, 'aapg_page_type', 'stub'); // Store page type
         update_post_meta($page_id, 'aapg_acf_group_id', $acf_group_id); // Store ACF group ID
         update_post_meta($page_id, 'aapg_elementor_template_id', $elementor_template_id); // Store template ID
         update_post_meta($page_id, 'aapg_prompt_id', $prompt_id); // Store prompt ID
@@ -363,6 +364,11 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
 
         // Save ACF data to fields
         self::apply_json_to_acf($page_id, $processed_data, $acf_group_id);
+        
+        // Store SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER data (after processed_data is created)
+        if (isset($processed_data['SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER'])) {
+            update_post_meta($page_id, 'aapg_seo_master_launch_request', $processed_data['SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER']);
+        }
 
         // Handle SEO meta fields
         if (isset($processed_data['meta_title']) && !empty($processed_data['meta_title'])) {
@@ -443,6 +449,11 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
         if (!empty($processed_data['meta_description'])) {
             update_post_meta($page_id, 'rank_math_description', sanitize_textarea_field($processed_data['meta_description']));
         }
+        
+        // Store SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER data
+        if (isset($processed_data['SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER'])) {
+            update_post_meta($page_id, 'aapg_seo_master_launch_request', $processed_data['SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER']);
+        }
         return [
             'success'      => true,
             'page_id'      => $page_id,
@@ -462,6 +473,7 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
      * @param string $acf_group_id ACF field group key
      * @param string $prompt_id OpenAI prompt ID
      * @param string $prompt Prompt content
+     * @param string $page_type Page type ('hub', 'stub', or 'research') - defaults to 'stub'
      * @return array|WP_Error Result array (success, page_id, page_url, ...) or WP_Error
      */
     public static function create_page_from_json_result(
@@ -471,7 +483,8 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
         int $elementor_template_id,
         string $acf_group_id,
         string $prompt_id,
-        string $prompt
+        string $prompt,
+        string $page_type = 'stub'
     ) {
         $generated_title = $final_data['page_title'] ?? $page_title;
         $generated_slug = $final_data['page_slug'] ?? '';
@@ -498,6 +511,7 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
 
         update_post_meta($page_id, 'isGeneratedByAutomation', 'true');
         update_post_meta($page_id, 'aiGenerated', 'true');
+        update_post_meta($page_id, 'aapg_page_type', $page_type); // Store page type (hub, stub, or research)
         update_post_meta($page_id, 'aapg_acf_group_id', $acf_group_id);
         update_post_meta($page_id, 'aapg_elementor_template_id', $elementor_template_id);
         update_post_meta($page_id, 'aapg_prompt_id', $prompt_id);
@@ -511,6 +525,11 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
         $url_resolution_table = $final_data['URL_RESOLUTION_TABLE'] ?? [];
         $processed_data = self::replace_link_labels($final_data, $url_resolution_table);
         self::apply_json_to_acf($page_id, $processed_data, $acf_group_id);
+        
+        // Store SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER data
+        if (isset($processed_data['SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER'])) {
+            update_post_meta($page_id, 'aapg_seo_master_launch_request', $processed_data['SEO_MASTER_LAUNCH_REQUEST_V2_FOR_SEO_BUNDLE_PLANNER']);
+        }
 
         if (!empty($processed_data['meta_title'])) {
             update_post_meta($page_id, 'rank_math_title', sanitize_text_field($processed_data['meta_title']));
