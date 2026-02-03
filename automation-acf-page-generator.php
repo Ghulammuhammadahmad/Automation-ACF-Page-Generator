@@ -11,7 +11,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('AAPG_PLUGIN_VERSION', '1.0.0');
+define('AAPG_PLUGIN_VERSION', '1.0.1');
 define('AAPG_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('AAPG_PLUGIN_URL', plugin_dir_url(__FILE__));
 
