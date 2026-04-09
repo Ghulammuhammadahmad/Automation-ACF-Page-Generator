@@ -27,12 +27,12 @@ class AAPG_ACF_Group_OpenAIJSONSchema {
             "additionalProperties" => false,
         ];
 
-        // ACF fields
+        // ACF fields (omit media-like fields from generation schema)
         if (is_array($fields)) {
             foreach ($fields as $field) {
                 $name = isset($field['name']) ? trim((string)$field['name']) : '';
-                if ($name === '' || $field['type'] === 'image') {
-                    continue; // avoid invalid keys or images
+                if ($name === '' || self::is_media_field_type($field['type'] ?? '')) {
+                    continue;
                 }
 
                 $schema["properties"][$name] = self::acf_schema_for_field($field);
@@ -78,6 +78,13 @@ class AAPG_ACF_Group_OpenAIJSONSchema {
     }
 
     /**
+     * Field types excluded from OpenAI JSON schema (handled via image APIs instead).
+     */
+    private static function is_media_field_type(string $type): bool {
+        return in_array($type, ['image', 'gallery', 'file'], true);
+    }
+
+    /**
      * Convert individual ACF field to JSON Schema property
      * 
      * @param array $field ACF field configuration
@@ -119,8 +126,8 @@ class AAPG_ACF_Group_OpenAIJSONSchema {
 
                 if (!empty($f['sub_fields'])) {
                     foreach ($f['sub_fields'] as $sub) {
-                        if ($sub['type'] === 'image') {
-                            continue; // Skip image sub-fields
+                        if (self::is_media_field_type($sub['type'] ?? '')) {
+                            continue;
                         }
                         $sub_props[$sub['name']] = self::acf_schema_for_field($sub);
                         $sub_req[] = $sub['name'];
@@ -142,7 +149,7 @@ class AAPG_ACF_Group_OpenAIJSONSchema {
 
                 if (!empty($f['sub_fields'])) {
                     foreach ($f['sub_fields'] as $sub) {
-                        if ($sub['type'] === 'image') {
+                        if (self::is_media_field_type($sub['type'] ?? '')) {
                             continue;
                         }
                         $sub_props[$sub['name']] = self::acf_schema_for_field($sub);

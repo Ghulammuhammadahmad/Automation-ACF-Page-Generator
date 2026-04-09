@@ -42,12 +42,36 @@ final class Plugin {
         add_action('wp_ajax_aapg_stub_node_generate_stream', [$this, 'ajax_stub_node_generate_stream']);
         add_action('wp_ajax_aapg_hub_maker_generate_stream', [$this, 'ajax_hub_maker_generate_stream']);
         add_action('wp_ajax_aapg_research_generate_stream', [$this, 'ajax_research_generate_stream']);
+        add_action('wp_ajax_aapg_generate_rest_api_key', [$this, 'ajax_generate_rest_api_key']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_frontend_scripts']);
         add_shortcode('aapg_generator', [$this, 'render_shortcode']);
-        
+        add_action('rest_api_init', [$this, 'register_rest_routes']);
+
+        // Shared image slot utilities (iframe + REST)
+        require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-ai-content-guard.php';
+        require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-image-slots.php';
+        require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-post-url.php';
         // Load iframe shortcode
         require_once AAPG_PLUGIN_DIR . 'includes/shortcodes/aapg-iframe-shortcode.php';
+    }
+
+    public function register_rest_routes(): void {
+        require_once AAPG_PLUGIN_DIR . 'includes/rest/class-aapg-rest-controller.php';
+        require_once AAPG_PLUGIN_DIR . 'includes/rest/class-aapg-ai-post-controller.php';
+        require_once AAPG_PLUGIN_DIR . 'includes/rest/class-aapg-content-images-controller.php';
+        require_once AAPG_PLUGIN_DIR . 'includes/rest/class-aapg-image-info-by-type-controller.php';
+        require_once AAPG_PLUGIN_DIR . 'includes/rest/class-aapg-media-upload-controller.php';
+        $controller = new \AAPG\Rest\AAPG_REST_Controller();
+        $controller->register_routes();
+        $ai_post_controller = new \AAPG\Rest\AAPG_AI_Post_Controller();
+        $ai_post_controller->register_routes();
+        $content_images = new \AAPG\Rest\AAPG_Content_Images_Controller();
+        $content_images->register_routes();
+        $image_info_by_type = new \AAPG\Rest\AAPG_Image_Info_By_Type_Controller();
+        $image_info_by_type->register_routes();
+        $media_upload = new \AAPG\Rest\AAPG_Media_Upload_Controller();
+        $media_upload->register_routes();
     }
 
     public function ajax_save_hub_maker_settings(): void {
@@ -66,6 +90,8 @@ final class Plugin {
         update_option(AAPG_OPTION_KEY, array_merge($existing_settings, [
             'hub_maker_default_acf_group' => $acf_field_group_key,
             'hub_maker_default_elementor_template' => $elementor_template_id,
+            // Keep API Hub template in sync with Hub Maker defaults unless manually changed in API settings.
+            'hub_elementor_template' => $elementor_template_id,
             'hub_maker_default_page_title' => $page_title,
             'hub_maker_default_prompt_id' => $prompt_id,
         ]));
@@ -201,6 +227,24 @@ final class Plugin {
                     'default_research_post_type' => isset($value['default_research_post_type']) ? sanitize_text_field($value['default_research_post_type']) : '',
                     'default_research_prompt_id' => isset($value['default_research_prompt_id']) ? sanitize_text_field($value['default_research_prompt_id']) : '',
                     'default_research_prompt' => isset($value['default_research_prompt']) ? sanitize_textarea_field(wp_unslash($value['default_research_prompt'])) : '',
+                    // REST API
+                    'aapg_rest_api_key' => isset($value['aapg_rest_api_key']) ? sanitize_text_field($value['aapg_rest_api_key']) : '',
+                    // API mode settings (stub, hub, researchcenter, blog)
+                    'stub_elementor_template' => isset($value['stub_elementor_template']) ? intval($value['stub_elementor_template']) : 0,
+                    'stub_acf_group' => isset($value['stub_acf_group']) ? sanitize_text_field($value['stub_acf_group']) : '',
+                    'hub_elementor_template' => isset($value['hub_elementor_template']) ? intval($value['hub_elementor_template']) : 0,
+                    'hub_acf_group' => isset($value['hub_acf_group']) ? sanitize_text_field($value['hub_acf_group']) : '',
+                    'content_images_video_acf_group' => isset($value['content_images_video_acf_group']) ? sanitize_text_field($value['content_images_video_acf_group']) : '',
+                    'researchcenter_post_type' => isset($value['researchcenter_post_type']) ? sanitize_text_field($value['researchcenter_post_type']) : '',
+                    'blog_post_type' => isset($value['blog_post_type']) ? sanitize_text_field($value['blog_post_type']) : 'post',
+                    'content_images_instructions_default' => isset($value['content_images_instructions_default']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_default'])) : '',
+                    'content_images_instructions_researchcenter' => isset($value['content_images_instructions_researchcenter']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_researchcenter'])) : '',
+                    'content_images_instructions_blog' => isset($value['content_images_instructions_blog']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_blog'])) : '',
+                    'content_images_instructions_stub' => isset($value['content_images_instructions_stub']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_stub'])) : '',
+                    'content_images_instructions_hub' => isset($value['content_images_instructions_hub']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_hub'])) : '',
+                    'content_images_field_instructions' => function_exists('aapg_content_images_sanitize_field_instructions_array')
+                        ? aapg_content_images_sanitize_field_instructions_array($value['content_images_field_instructions'] ?? [])
+                        : [],
                 ];
             },
             'default' => [ 
@@ -223,6 +267,21 @@ final class Plugin {
                 'default_research_post_type' => '',
                 'default_research_prompt_id' => '',
                 'default_research_prompt' => '',
+                // REST API
+                'aapg_rest_api_key' => '',
+                'stub_elementor_template' => 0,
+                'stub_acf_group' => '',
+                'hub_elementor_template' => 0,
+                'hub_acf_group' => '',
+                'content_images_video_acf_group' => '',
+                'researchcenter_post_type' => '',
+                'blog_post_type' => 'post',
+                'content_images_instructions_default' => '',
+                'content_images_instructions_researchcenter' => '',
+                'content_images_instructions_blog' => '',
+                'content_images_instructions_stub' => '',
+                'content_images_instructions_hub' => '',
+                'content_images_field_instructions' => [],
             ],
         ]);
 
@@ -439,6 +498,14 @@ final class Plugin {
             'view_url' => get_permalink($post_id),
             'edit_url' => get_edit_post_link($post_id)
         ]);
+    }
+
+    public function ajax_generate_rest_api_key(): void {
+        check_ajax_referer('aapg_generate_nonce', 'nonce');
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Permission denied.', 'aapg')]);
+        }
+        wp_send_json_success(['key' => wp_generate_password(32, true, true)]);
     }
 
     public function ajax_test_stream(): void {
@@ -1225,19 +1292,32 @@ final class Plugin {
             if (isset($_POST[AAPG_OPTION_KEY]) && is_array($_POST[AAPG_OPTION_KEY])) {
                 $new_settings = wp_unslash($_POST[AAPG_OPTION_KEY]);
                 $existing_settings = get_option(AAPG_OPTION_KEY, []);
-                
-                update_option(AAPG_OPTION_KEY, array_merge($existing_settings, [
+                $merged = array_merge($existing_settings, [
                     'openai_api_key' => isset($new_settings['openai_api_key']) ? sanitize_text_field($new_settings['openai_api_key']) : '',
                     'aapg_iframe_edit_page_url' => isset($new_settings['aapg_iframe_edit_page_url']) ? esc_url_raw(trim($new_settings['aapg_iframe_edit_page_url'])) : '',
-                ]));
+                    'aapg_rest_api_key' => isset($new_settings['aapg_rest_api_key']) ? sanitize_text_field($new_settings['aapg_rest_api_key']) : '',
+                    'stub_elementor_template' => isset($new_settings['stub_elementor_template']) ? intval($new_settings['stub_elementor_template']) : 0,
+                    'stub_acf_group' => isset($new_settings['stub_acf_group']) ? sanitize_text_field($new_settings['stub_acf_group']) : '',
+                    'hub_elementor_template' => isset($new_settings['hub_elementor_template']) ? intval($new_settings['hub_elementor_template']) : 0,
+                    'hub_acf_group' => isset($new_settings['hub_acf_group']) ? sanitize_text_field($new_settings['hub_acf_group']) : '',
+                    'content_images_video_acf_group' => isset($new_settings['content_images_video_acf_group']) ? sanitize_text_field($new_settings['content_images_video_acf_group']) : '',
+                    'researchcenter_post_type' => isset($new_settings['researchcenter_post_type']) ? sanitize_text_field($new_settings['researchcenter_post_type']) : '',
+                    'blog_post_type' => isset($new_settings['blog_post_type']) ? sanitize_text_field($new_settings['blog_post_type']) : 'post',
+                    'content_images_instructions_default' => isset($new_settings['content_images_instructions_default']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_default'])) : '',
+                    'content_images_instructions_researchcenter' => isset($new_settings['content_images_instructions_researchcenter']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_researchcenter'])) : '',
+                    'content_images_instructions_blog' => isset($new_settings['content_images_instructions_blog']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_blog'])) : '',
+                    'content_images_instructions_stub' => isset($new_settings['content_images_instructions_stub']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_stub'])) : '',
+                    'content_images_instructions_hub' => isset($new_settings['content_images_instructions_hub']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_hub'])) : '',
+                    'content_images_field_instructions' => function_exists('aapg_content_images_sanitize_field_instructions_array')
+                        ? aapg_content_images_sanitize_field_instructions_array($new_settings['content_images_field_instructions'] ?? [])
+                        : [],
+                ]);
+                update_option(AAPG_OPTION_KEY, $merged);
                 $notices[] = __('Settings saved.', 'aapg');
             }
         }
 
-        $settings = get_option(AAPG_OPTION_KEY, [ 
-            'openai_api_key' => '', 
-            'aapg_iframe_edit_page_url' => '',
-        ]);
+        $settings = get_option(AAPG_OPTION_KEY, []);
 
         echo '<div class="wrap">';
         echo '<h1>' . esc_html__('Hub ACF Page Generator Settings', 'aapg') . '</h1>';
@@ -1256,8 +1336,123 @@ final class Plugin {
         echo '<tr><th scope="row"><label for="aapg_iframe_edit_page_url">' . esc_html__('Iframe Edit Page URL', 'aapg') . '</label></th>';
         echo '<td><input type="url" id="aapg_iframe_edit_page_url" name="' . esc_attr(AAPG_OPTION_KEY) . '[aapg_iframe_edit_page_url]" value="' . esc_attr($settings['aapg_iframe_edit_page_url'] ?? '') . '" class="regular-text" placeholder="https://example.com/edit-page/" />'
             . '<p class="description">' . esc_html__('URL of the page where you added the [aapg_iframe] shortcode. The "Edit (iframe)" link in Generated Pages & Posts will open this page with the post ID so the shortcode can display the content in the iframe.', 'aapg') . '</p></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_rest_api_key">' . esc_html__('REST API Key', 'aapg') . '</label></th>';
+        echo '<td><input type="password" id="aapg_rest_api_key" name="' . esc_attr(AAPG_OPTION_KEY) . '[aapg_rest_api_key]" value="' . esc_attr($settings['aapg_rest_api_key'] ?? '') . '" class="regular-text" autocomplete="off" /> ';
+        echo '<button type="button" id="aapg-generate-rest-api-key" class="button">' . esc_html__('Generate Key', 'aapg') . '</button>';
+        echo '<p class="description">' . esc_html__('Used to authenticate REST API requests. Send via header X-AAPG-API-Key or query param api_key. Leave empty to disable the REST API.', 'aapg') . '</p></td></tr>';
         echo '</table>';
-        
+
+        // API Mode Settings (for REST API: stub, researchcenter, blog)
+        $api_templates = $this->has_elementor() ? $this->get_hubtemplates_elementor_templates() : [];
+        $api_field_groups = $this->has_acf() ? acf_get_field_groups() : [];
+        $research_post_types = get_post_types(['show_ui' => true], 'objects');
+        echo '<h2>' . esc_html__('API Mode Settings', 'aapg') . '</h2>';
+        echo '<p>' . esc_html__('Configure defaults for the REST API (stub, research center, blog). Used when creating content via POST with AddPage=true.', 'aapg') . '</p>';
+        echo '<table class="form-table" role="presentation">';
+        echo '<tr><th scope="row"><label for="aapg_stub_elementor_template">' . esc_html__('Stub: Elementor Template', 'aapg') . '</label></th><td><select id="aapg_stub_elementor_template" name="' . esc_attr(AAPG_OPTION_KEY) . '[stub_elementor_template]">';
+        echo '<option value="0">' . esc_html__('— Select —', 'aapg') . '</option>';
+        foreach ($api_templates as $tpl) {
+            $sid = (int) ($settings['stub_elementor_template'] ?? $settings['default_elementor_template'] ?? 0);
+            echo '<option value="' . esc_attr($tpl['ID']) . '"' . selected($sid, $tpl['ID'], false) . '>' . esc_html($tpl['post_title']) . ' (#' . (int) $tpl['ID'] . ')</option>';
+        }
+        echo '</select></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_stub_acf_group">' . esc_html__('Stub: ACF Field Group', 'aapg') . '</label></th><td><select id="aapg_stub_acf_group" name="' . esc_attr(AAPG_OPTION_KEY) . '[stub_acf_group]">';
+        echo '<option value="">' . esc_html__('— Select —', 'aapg') . '</option>';
+        foreach ($api_field_groups as $grp) {
+            $gkey = $settings['stub_acf_group'] ?? $settings['default_acf_group'] ?? '';
+            echo '<option value="' . esc_attr($grp['key']) . '"' . selected($gkey, $grp['key'], false) . '>' . esc_html($grp['title']) . ' (' . esc_html($grp['key']) . ')</option>';
+        }
+        echo '</select></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_hub_acf_group">' . esc_html__('Hub: ACF Field Group', 'aapg') . '</label></th><td><select id="aapg_hub_acf_group" name="' . esc_attr(AAPG_OPTION_KEY) . '[hub_acf_group]">';
+        echo '<option value="">' . esc_html__('— Use Hub Maker default —', 'aapg') . '</option>';
+        $hub_gkey = $settings['hub_acf_group'] ?? '';
+        foreach ($api_field_groups as $grp) {
+            echo '<option value="' . esc_attr($grp['key']) . '"' . selected($hub_gkey, $grp['key'], false) . '>' . esc_html($grp['title']) . ' (' . esc_html($grp['key']) . ')</option>';
+        }
+        echo '</select></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_content_images_video_acf_group">' . esc_html__('Content Images: Video ACF Group', 'aapg') . '</label></th><td><select id="aapg_content_images_video_acf_group" name="' . esc_attr(AAPG_OPTION_KEY) . '[content_images_video_acf_group]">';
+        echo '<option value="">' . esc_html__('— Not set (fallback keys: video_thumbnail/video_link) —', 'aapg') . '</option>';
+        $video_gkey = $settings['content_images_video_acf_group'] ?? '';
+        foreach ($api_field_groups as $grp) {
+            echo '<option value="' . esc_attr($grp['key']) . '"' . selected($video_gkey, $grp['key'], false) . '>' . esc_html($grp['title']) . ' (' . esc_html($grp['key']) . ')</option>';
+        }
+        echo '</select><p class="description">' . esc_html__('Dedicated group for video_thumbnail/video_link fields used by content-images APIs. This is independent from Stub/Hub ACF groups.', 'aapg') . '</p></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_hub_elementor_template">' . esc_html__('Hub: Elementor Template', 'aapg') . '</label></th><td><select id="aapg_hub_elementor_template" name="' . esc_attr(AAPG_OPTION_KEY) . '[hub_elementor_template]">';
+        echo '<option value="0">' . esc_html__('— Use Hub Maker default —', 'aapg') . '</option>';
+        foreach ($api_templates as $tpl) {
+            $hid = (int) ($settings['hub_elementor_template'] ?? $settings['hub_maker_default_elementor_template'] ?? $settings['default_elementor_template'] ?? 0);
+            echo '<option value="' . esc_attr($tpl['ID']) . '"' . selected($hid, $tpl['ID'], false) . '>' . esc_html($tpl['post_title']) . ' (#' . (int) $tpl['ID'] . ')</option>';
+        }
+        echo '</select></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_researchcenter_post_type">' . esc_html__('Research Center: Post Type', 'aapg') . '</label></th><td><select id="aapg_researchcenter_post_type" name="' . esc_attr(AAPG_OPTION_KEY) . '[researchcenter_post_type]">';
+        $rc_pt = $settings['researchcenter_post_type'] ?? $settings['default_research_post_type'] ?? 'post';
+        foreach ($research_post_types as $pt) {
+            if (post_type_supports($pt->name, 'title') && post_type_supports($pt->name, 'editor')) {
+                echo '<option value="' . esc_attr($pt->name) . '"' . selected($rc_pt, $pt->name, false) . '>' . esc_html($pt->labels->singular_name) . '</option>';
+            }
+        }
+        echo '</select></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_blog_post_type">' . esc_html__('Blog: Post Type', 'aapg') . '</label></th><td><select id="aapg_blog_post_type" name="' . esc_attr(AAPG_OPTION_KEY) . '[blog_post_type]">';
+        $blog_pt = $settings['blog_post_type'] ?? 'post';
+        foreach ($research_post_types as $pt) {
+            if (post_type_supports($pt->name, 'title') && post_type_supports($pt->name, 'editor')) {
+                echo '<option value="' . esc_attr($pt->name) . '"' . selected($blog_pt, $pt->name, false) . '>' . esc_html($pt->labels->singular_name) . '</option>';
+            }
+        }
+        echo '</select></td></tr>';
+        echo '</table>';
+
+        echo '<h2>' . esc_html__('Content images API (REST)', 'aapg') . '</h2>';
+        echo '<p>' . esc_html__('Instructions appear in GET /wp-json/aapg/v1/content-images/info?type=…: top-level image_upload_instructions uses the type fallback chain; each field row includes upload_instructions (per-field text below, else type fallback, else default). Stub/Hub image slots are taken from their API Mode ACF groups, and video fields are taken from the dedicated Video ACF Group setting above.', 'aapg') . '</p>';
+        echo '<table class="form-table" role="presentation">';
+        $cid = 'content_images_instructions_default';
+        echo '<tr><th scope="row"><label for="aapg_' . esc_attr($cid) . '">' . esc_html__('Default image instructions', 'aapg') . '</label></th><td>';
+        echo '<textarea id="aapg_' . esc_attr($cid) . '" name="' . esc_attr(AAPG_OPTION_KEY) . '[' . esc_attr($cid) . ']" rows="4" class="large-text" placeholder="' . esc_attr__('e.g. 1200×630px minimum, 72 DPI, JPG or WebP, under 500 KB.', 'aapg') . '">' . esc_textarea($settings[$cid] ?? '') . '</textarea>';
+        echo '<p class="description">' . esc_html__('Used when a field has no specific instructions and the type fallback below is empty.', 'aapg') . '</p></td></tr>';
+        echo '</table>';
+
+        $stored_fi = isset($settings['content_images_field_instructions']) && is_array($settings['content_images_field_instructions'])
+            ? $settings['content_images_field_instructions'] : [];
+        $kind_sections = [
+            'researchcenter' => [
+                'label' => __('Research center / research', 'aapg'),
+                'fallback_key' => 'content_images_instructions_researchcenter',
+            ],
+            'blog' => [
+                'label' => __('Blog', 'aapg'),
+                'fallback_key' => 'content_images_instructions_blog',
+            ],
+            'stub' => [
+                'label' => __('Stub', 'aapg'),
+                'fallback_key' => 'content_images_instructions_stub',
+            ],
+            'hub' => [
+                'label' => __('Hub', 'aapg'),
+                'fallback_key' => 'content_images_instructions_hub',
+            ],
+        ];
+        foreach ($kind_sections as $kind => $sec) {
+            echo '<h3>' . esc_html($sec['label']) . '</h3>';
+            $fbk = $sec['fallback_key'];
+            echo '<table class="form-table" role="presentation">';
+            echo '<tr><th scope="row"><label for="aapg_' . esc_attr($fbk) . '">' . esc_html__('Type fallback (optional)', 'aapg') . '</label></th><td>';
+            echo '<textarea id="aapg_' . esc_attr($fbk) . '" name="' . esc_attr(AAPG_OPTION_KEY) . '[' . esc_attr($fbk) . ']" rows="2" class="large-text" placeholder="' . esc_attr__('Applies to all fields of this type when a field has no text below.', 'aapg') . '">' . esc_textarea($settings[$fbk] ?? '') . '</textarea></td></tr>';
+            echo '</table>';
+            if (function_exists('aapg_content_images_discover_instruction_slots')) {
+                $slots = aapg_content_images_discover_instruction_slots($kind);
+                echo '<table class="form-table" role="presentation">';
+                foreach ($slots as $slot) {
+                    $sk = $slot['key'];
+                    $val = $stored_fi[$kind][$sk] ?? '';
+                    $fname = AAPG_OPTION_KEY . '[content_images_field_instructions][' . $kind . '][' . $sk . ']';
+                    echo '<tr><th scope="row"><label for="aapg_fi_' . esc_attr($kind . '_' . md5($sk)) . '">' . esc_html($slot['label']) . '</label></th><td>';
+                    echo '<p class="description"><code>' . esc_html($sk) . '</code></p>';
+                    echo '<textarea id="aapg_fi_' . esc_attr($kind . '_' . md5($sk)) . '" name="' . esc_attr($fname) . '" rows="2" class="large-text" placeholder="' . esc_attr__('Optional — dimensions, resolution, format for this slot only', 'aapg') . '">' . esc_textarea($val) . '</textarea></td></tr>';
+                }
+                echo '</table>';
+            }
+        }
+
         // Stub Node Settings Section
         echo '<h2>' . esc_html__('Stub Node Settings', 'aapg') . '</h2>';
         echo '<p>' . esc_html__('Configure default values for the Stub Node generation. These values will be pre-filled in the test form.', 'aapg') . '</p>';
@@ -1267,6 +1462,7 @@ final class Plugin {
         
         submit_button(__('Save Settings', 'aapg'));
         echo '</form>';
+        echo '<script>(function(){var btn=document.getElementById("aapg-generate-rest-api-key");var inp=document.getElementById("aapg_rest_api_key");if(btn&&inp){btn.addEventListener("click",function(){if(typeof aapgAjax!=="undefined"&&aapgAjax.ajaxUrl&&aapgAjax.nonce){var f=new FormData();f.append("action","aapg_generate_rest_api_key");f.append("nonce",aapgAjax.nonce);fetch(aapgAjax.ajaxUrl,{method:"POST",body:f,credentials:"same-origin"}).then(function(r){return r.json();}).then(function(d){if(d.success&&d.data&&d.data.key){inp.value=d.data.key;inp.type="text";}});}else{var k="";for(var i=0;i<32;i++)k+="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".charAt(Math.floor(Math.random()*62));inp.value=k;inp.type="text";}});}}</script>';
         echo '</div>';
         echo '<div>';
         echo '<h2>' . esc_html__('Generate Page', 'aapg') . '</h2>';

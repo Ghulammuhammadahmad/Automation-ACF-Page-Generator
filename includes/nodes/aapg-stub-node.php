@@ -164,7 +164,8 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
             ],
             'input' => $input,
         ];
-
+// print_r($request_data);
+// exit();
         $streamed_content = '';
         $final_data = null;
         $debug_last_type = '';
@@ -474,6 +475,7 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
      * @param string $prompt_id OpenAI prompt ID
      * @param string $prompt Prompt content
      * @param string $page_type Page type ('hub', 'stub', or 'research') - defaults to 'stub'
+     * @param string $post_status Post status ('publish' or 'draft') - defaults to 'draft'
      * @return array|WP_Error Result array (success, page_id, page_url, ...) or WP_Error
      */
     public static function create_page_from_json_result(
@@ -484,7 +486,8 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
         string $acf_group_id,
         string $prompt_id,
         string $prompt,
-        string $page_type = 'stub'
+        string $page_type = 'stub',
+        string $post_status = 'draft'
     ) {
         $generated_title = $final_data['page_title'] ?? $page_title;
         $generated_slug = $final_data['page_slug'] ?? '';
@@ -496,7 +499,7 @@ The output must start with { and end with }. aLWAYS PROVIDE LABELS IN [] AND MAK
 
         $page_args = [
             'post_type'   => 'page',
-            'post_status' => 'draft',
+            'post_status' => in_array($post_status, ['publish', 'draft'], true) ? $post_status : 'draft',
             'post_title'  => sanitize_text_field($generated_title),
             'post_name'   => $generated_slug,
         ];

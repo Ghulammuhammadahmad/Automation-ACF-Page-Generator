@@ -118,6 +118,20 @@
                 }
             });
         }
+        var blogToggle = document.getElementById('aapg-blog-editor-toggle');
+        var blogInner = document.getElementById('aapg-blog-editor-inner');
+        if (blogToggle && blogInner) {
+            blogToggle.addEventListener('click', function() {
+                blogInner.classList.toggle('aapg-form-collapsed');
+                blogToggle.setAttribute('aria-expanded', !blogInner.classList.contains('aapg-form-collapsed'));
+            });
+            blogToggle.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    blogToggle.click();
+                }
+            });
+        }
         // Edit with AI collapsible
         var editAiToggle = document.getElementById('aapg-edit-with-ai-toggle');
         var editAiBody = document.getElementById('aapg-edit-with-ai-body');
@@ -269,6 +283,45 @@
             data.append('nonce', nonce);
             data.append('post_id', postId);
             data.append('content', content);
+            if (btn) btn.disabled = true;
+            if (status) { status.textContent = ''; status.className = 'aapg-acf-edit-form-status'; }
+            fetch(ajaxurl, { method: 'POST', body: data, credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                    if (status) {
+                        status.className = 'aapg-acf-edit-form-status ' + (res.success ? 'aapg-success' : 'aapg-error');
+                        status.textContent = (res.data && res.data.message) ? res.data.message : (res.success ? 'Saved.' : 'Save failed.');
+                    }
+                    if (res.success && typeof window.aapgReloadIframe === 'function') window.aapgReloadIframe();
+                })
+                .catch(function() {
+                    if (status) { status.className = 'aapg-acf-edit-form-status aapg-error'; status.textContent = 'Request failed.'; }
+                })
+                .then(function() { if (btn) btn.disabled = false; });
+        });
+    }
+
+    function initBlogContentEditor() {
+        var form = document.getElementById('aapg-blog-content-form');
+        if (!form) return;
+        var btn = document.getElementById('aapg-blog-content-save-btn');
+        var status = document.getElementById('aapg-blog-content-status');
+        var ajaxurl = form.getAttribute('data-ajaxurl');
+        var nonce = form.getAttribute('data-nonce');
+        var postId = form.getAttribute('data-post-id');
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            if (typeof tinymce !== 'undefined') tinymce.triggerSave();
+            var metaTitleEl = document.getElementById('aapg_blog_meta_title');
+            var metaDescEl = document.getElementById('aapg_blog_meta_description');
+            var contentEl = document.getElementById('aapg_blog_content_editor');
+            var data = new FormData();
+            data.append('action', 'aapg_iframe_save_blog_content');
+            data.append('nonce', nonce);
+            data.append('post_id', postId);
+            data.append('aapg_blog_meta_title', metaTitleEl ? metaTitleEl.value : '');
+            data.append('aapg_blog_meta_description', metaDescEl ? metaDescEl.value : '');
+            data.append('aapg_blog_content', contentEl ? contentEl.value : '');
             if (btn) btn.disabled = true;
             if (status) { status.textContent = ''; status.className = 'aapg-acf-edit-form-status'; }
             fetch(ajaxurl, { method: 'POST', body: data, credentials: 'same-origin' })
@@ -710,6 +763,7 @@
         initPublishUnpublish();
         initAcfForm();
         initResearchContentEditor();
+        initBlogContentEditor();
         initEditWithAi();
         initPageImages();
     }
