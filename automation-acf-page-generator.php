@@ -360,3 +360,144 @@ function custom_acf_youtube_video_shortcode($atts) {
     return ob_get_clean();
 }
 add_shortcode('acf_youtube_video', 'custom_acf_youtube_video_shortcode');
+
+function hubmodeb_nearest_clinic_cards_shortcode($atts)
+{
+    if (!function_exists('get_field')) {
+        return '';
+    }
+
+    $locations_json = '[
+  {
+    "title": "Comprehensive Spine Center of Dallas – Farmers Branch Clinic",
+    "address": "2655 Villa Creek Drive, Suite 105W, West Building, Farmers Branch, Texas 75234",
+    "map_link": "/locations/farmers-branch-clinic/",
+    "image": "https://dallasspine.com/wp-content/uploads/2025/12/farmerbranch-clinic-loc-photo.webp",
+    "phone": "214-831-3212"
+  },
+  {
+    "title": "Comprehensive Spine Center of Dallas – Fort Worth Clinic",
+    "address": "1000 Ninth Avenue, Suite A, Fort Worth, Texas 76104",
+    "map_link": "/locations/fort-worth-clinic/",
+    "image": "https://dallasspine.com/wp-content/uploads/2025/12/fort-worth-clinic-loc-photo.webp",
+    "phone": "817-608-7384"
+  },
+  {
+    "title": "Comprehensive Spine Center of Dallas – Allen Clinic",
+    "address": "1101 Raintree Circle, Suite 200, Allen, Texas 75013",
+    "map_link": "/locations/allen-clinic/",
+    "image": "https://dallasspine.com/wp-content/uploads/2025/12/allen-clinic-loc-photo.webp",
+    "phone": "214-831-1682"
+  },
+  {
+    "title": "Comprehensive Spine Center of Dallas – Arlington Clinic",
+    "address": "2261 Brookhollow Plaza Drive, Suite 111, Arlington, Texas 76006",
+    "map_link": "/locations/arlington-clinic/",
+    "image": "https://dallasspine.com/wp-content/uploads/2025/12/arlington-clinic-loc-photo.webp",
+    "phone": "817-608-7383"
+  },
+  {
+    "title": "Comprehensive Spine Center of Dallas – Frisco Clinic",
+    "address": "4577 Ohio Drive, Suite 140, Frisco, Texas 75035",
+    "map_link": "/locations/frisco-clinic/",
+    "image": "https://dallasspine.com/wp-content/uploads/2025/12/frisco-clinic-loc-photo.webp",
+    "phone": "214-831-3027"
+  },
+  {
+    "title": "Comprehensive Spine Center of Dallas – Lancaster Clinic",
+    "address": "2700 West Pleasant Run Road, Suite 200, West Entrance, Lancaster, Texas 75146",
+    "map_link": "/locations/lancaster-clinic/",
+    "image": "https://dallasspine.com/wp-content/uploads/2025/12/lancaster-clinic-loc-photo.webp",
+    "phone": "214-831-1574"
+  },
+  {
+    "title": "Comprehensive Spine Center of Dallas – Mesquite Clinic",
+    "address": "18601 Lyndon B Johnson Freeway, Suite 618, Mesquite, Texas 75150",
+    "map_link": "/locations/mesquite-clinic/",
+    "image": "https://dallasspine.com/wp-content/uploads/2025/12/mesquite-clinic-loc-photo.webp",
+    "phone": "214-831-1142"
+  }
+]';
+
+    $all_locations = json_decode($locations_json, true);
+
+    global $post;
+    if (empty($post)) return '';
+
+    $repeater = get_field('nearest_clinics', $post->ID);
+    if (empty($repeater) || !is_array($repeater)) {
+        return '';
+    }
+
+    // Helper: sanitize, lowercase, remove en dash/hyphen/emdash, trim spaces
+    function csd_sanitize_location_title($title) {
+        // Remove spaces around dashes, replace en/em dash and hyphen-minus with empty string
+        $title = str_replace(['–', '-', '—'], '', $title);
+        // Lowercase, trim, collapse multiple spaces
+        $title = strtolower($title);
+        $title = preg_replace('/\s+/', ' ', $title);
+        return trim($title);
+    }
+
+    // Build quick map of sanitized, lowercase "title" => location
+    $location_map = [];
+    foreach ($all_locations as $loc) {
+        if (!empty($loc['title'])) {
+            $key = csd_sanitize_location_title($loc['title']);
+            $location_map[$key] = $loc;
+        }
+    }
+
+    ob_start();
+    ?>
+    <div class="clhb-location-cards">
+        <?php foreach ($repeater as $row):
+
+            $clinic_title = $row['nearest_clinic_name'] ?? '';
+            $sanitized_clinic_title = csd_sanitize_location_title($clinic_title);
+            if (empty($clinic_title) || empty($location_map[$sanitized_clinic_title])) {
+                continue;
+            }
+            $loc = $location_map[$sanitized_clinic_title];
+            ?>
+            <div class="clhb-location-card">
+                <?php if (!empty($loc['image'])): ?>
+                    <div class="clhb-location-card-image">
+                        <img src="<?php echo esc_url($loc['image']); ?>"
+                             alt="<?php echo esc_attr($loc['title']); ?>"
+                             loading="lazy">
+                    </div>
+                <?php endif; ?>
+
+                <div class="clhb-location-card-title"><h3><?php echo esc_html($loc['title']); ?></h3></div>
+                <div class="clhb-location-servingroute">
+                    <?php echo !empty($row['nearest_clinic_details_fit_steps_para']) ? esc_html($row['nearest_clinic_details_fit_steps_para']) : ''; ?>
+                </div>
+                <div class="clhb-location-card-address">
+                    <?php echo esc_html($loc['address']); ?><br>
+                    Phone: <a href="<?php echo 'tel:' . $loc['phone']; ?>"><?php echo $loc['phone']; ?></a><br>
+                    Email: <a href="mailto:scheduling@dallasspine.com">scheduling@dallasspine.com</a>
+                </div>
+
+                <div class="clhb-location-card-maplink">
+                    <a href="<?php echo esc_url($loc['map_link']); ?>" target="_blank" rel="noopener">
+                        View Location
+                    </a>
+                </div>
+            </div>
+        <?php endforeach; ?>
+    </div>
+<style> .clhb-location-card-title h3{ font-weight:600 !important; } .clhb-location-cards { display: flex; gap: 8rem; flex-wrap: wrap; justify-content: center; align-items: stretch; margin-bottom: 1em; } .clhb-location-card { border-radius: 12px; width: 45%; border: 1px solid #074476; background: #FFF !important; box-shadow: 2px 4px 76px 2px rgba(0, 0, 0, 0.13); padding: 2rem; display: flex; gap: 1.5rem; flex-direction: column; align-items: flex-start; transition: transform 0.25s, box-shadow 0.25s;} .clhb-location-card-image img { width: 100%; } .clhb-location-card-title { font-size: 1.1em; text-align: center; width: 100%; } .clhb-location-card-address { margin-bottom: 10px; color: #333; font-size: 1.8rem; width: 100%; text-align: center; } .clhb-location-card-maplink { border-radius: 8px; background: #2EA3F2; color: #fff; padding: 1.4rem 2.6rem; text-decoration: none; margin: auto;transition: all 0.3s ease; }
+	.clhb-location-card:hover{
+  transform: translateY(-4px);
+  box-shadow: 0 16px 56px rgba(26, 48, 96, 0.17) !important;
+}
+	.clhb-location-card-maplink:hover {
+  box-shadow: 0 4px 18px rgba(30, 136, 229, 0.45);
+  transform: translateY(-2px);
+} .clhb-location-card-maplink a { color: #fff; } .clhb-location-servingroute{padding:1rem .5rem;text-align:center;font-size:1.3rem;line-height:1.5em;background:#1d1D1D0A;display: flex;justify-content: center;align-items: center;width: 100%;} @media (max-width:1100px){.clhb-location-cards{gap:2rem}} @media (max-width:1024px){ .clhb-location-card{ width:48%; padding: 1rem !important; } .clhb-location-card-address{ font-size:1.6rem; margin-bottom:0; } } @media (max-width:767px){ .clhb-location-card{ width:100%; padding: 1.6rem !important; } } </style>
+    <?php
+    // (keep your existing <style> block as-is)
+    return ob_get_clean();
+}
+add_shortcode('hubmodeb_nearest_clinic_cards', 'hubmodeb_nearest_clinic_cards_shortcode');
