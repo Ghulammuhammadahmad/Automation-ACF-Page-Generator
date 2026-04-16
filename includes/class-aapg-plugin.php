@@ -242,6 +242,10 @@ final class Plugin {
                     'content_images_instructions_blog' => isset($value['content_images_instructions_blog']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_blog'])) : '',
                     'content_images_instructions_stub' => isset($value['content_images_instructions_stub']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_stub'])) : '',
                     'content_images_instructions_hub' => isset($value['content_images_instructions_hub']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_hub'])) : '',
+                    'content_images_instructions_hubmodeb' => isset($value['content_images_instructions_hubmodeb']) ? sanitize_textarea_field(wp_unslash($value['content_images_instructions_hubmodeb'])) : '',
+                    'hubmodeb_acf_group' => isset($value['hubmodeb_acf_group']) ? sanitize_text_field($value['hubmodeb_acf_group']) : '',
+                    'hubmodeb_elementor_template' => isset($value['hubmodeb_elementor_template']) ? intval($value['hubmodeb_elementor_template']) : 0,
+                    'hubmodeb_default_parent_page_id' => isset($value['hubmodeb_default_parent_page_id']) ? intval($value['hubmodeb_default_parent_page_id']) : 0,
                     'content_images_field_instructions' => function_exists('aapg_content_images_sanitize_field_instructions_array')
                         ? aapg_content_images_sanitize_field_instructions_array($value['content_images_field_instructions'] ?? [])
                         : [],
@@ -281,6 +285,10 @@ final class Plugin {
                 'content_images_instructions_blog' => '',
                 'content_images_instructions_stub' => '',
                 'content_images_instructions_hub' => '',
+                'content_images_instructions_hubmodeb' => '',
+                'hubmodeb_acf_group' => '',
+                'hubmodeb_elementor_template' => 0,
+                'hubmodeb_default_parent_page_id' => 0,
                 'content_images_field_instructions' => [],
             ],
         ]);
@@ -1308,6 +1316,10 @@ final class Plugin {
                     'content_images_instructions_blog' => isset($new_settings['content_images_instructions_blog']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_blog'])) : '',
                     'content_images_instructions_stub' => isset($new_settings['content_images_instructions_stub']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_stub'])) : '',
                     'content_images_instructions_hub' => isset($new_settings['content_images_instructions_hub']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_hub'])) : '',
+                    'content_images_instructions_hubmodeb' => isset($new_settings['content_images_instructions_hubmodeb']) ? sanitize_textarea_field(wp_unslash($new_settings['content_images_instructions_hubmodeb'])) : '',
+                    'hubmodeb_acf_group' => isset($new_settings['hubmodeb_acf_group']) ? sanitize_text_field($new_settings['hubmodeb_acf_group']) : '',
+                    'hubmodeb_elementor_template' => isset($new_settings['hubmodeb_elementor_template']) ? intval($new_settings['hubmodeb_elementor_template']) : 0,
+                    'hubmodeb_default_parent_page_id' => isset($new_settings['hubmodeb_default_parent_page_id']) ? intval($new_settings['hubmodeb_default_parent_page_id']) : 0,
                     'content_images_field_instructions' => function_exists('aapg_content_images_sanitize_field_instructions_array')
                         ? aapg_content_images_sanitize_field_instructions_array($new_settings['content_images_field_instructions'] ?? [])
                         : [],
@@ -1384,6 +1396,23 @@ final class Plugin {
             echo '<option value="' . esc_attr($tpl['ID']) . '"' . selected($hid, $tpl['ID'], false) . '>' . esc_html($tpl['post_title']) . ' (#' . (int) $tpl['ID'] . ')</option>';
         }
         echo '</select></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_hubmodeb_acf_group">' . esc_html__('Hub Mode B: ACF Field Group', 'aapg') . '</label></th><td><select id="aapg_hubmodeb_acf_group" name="' . esc_attr(AAPG_OPTION_KEY) . '[hubmodeb_acf_group]">';
+        echo '<option value="">' . esc_html__('— Use Hub default —', 'aapg') . '</option>';
+        $hubmodeb_gkey = $settings['hubmodeb_acf_group'] ?? '';
+        foreach ($api_field_groups as $grp) {
+            echo '<option value="' . esc_attr($grp['key']) . '"' . selected($hubmodeb_gkey, $grp['key'], false) . '>' . esc_html($grp['title']) . ' (' . esc_html($grp['key']) . ')</option>';
+        }
+        echo '</select></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_hubmodeb_elementor_template">' . esc_html__('Hub Mode B: Elementor Template', 'aapg') . '</label></th><td><select id="aapg_hubmodeb_elementor_template" name="' . esc_attr(AAPG_OPTION_KEY) . '[hubmodeb_elementor_template]">';
+        echo '<option value="0">' . esc_html__('— Use Hub API default —', 'aapg') . '</option>';
+        $hubmodeb_tid = (int) ($settings['hubmodeb_elementor_template'] ?? 0);
+        foreach ($api_templates as $tpl) {
+            echo '<option value="' . esc_attr($tpl['ID']) . '"' . selected($hubmodeb_tid, $tpl['ID'], false) . '>' . esc_html($tpl['post_title']) . ' (#' . (int) $tpl['ID'] . ')</option>';
+        }
+        echo '</select></td></tr>';
+        echo '<tr><th scope="row"><label for="aapg_hubmodeb_default_parent_page_id">' . esc_html__('Hub Mode B: Default Parent Page ID', 'aapg') . '</label></th>';
+        echo '<td><input type="number" id="aapg_hubmodeb_default_parent_page_id" name="' . esc_attr(AAPG_OPTION_KEY) . '[hubmodeb_default_parent_page_id]" value="' . esc_attr($settings['hubmodeb_default_parent_page_id'] ?? 0) . '" class="small-text" min="0" />';
+        echo '<p class="description">' . esc_html__('Optional. Falls back to Hub default parent when 0.', 'aapg') . '</p></td></tr>';
         echo '<tr><th scope="row"><label for="aapg_researchcenter_post_type">' . esc_html__('Research Center: Post Type', 'aapg') . '</label></th><td><select id="aapg_researchcenter_post_type" name="' . esc_attr(AAPG_OPTION_KEY) . '[researchcenter_post_type]">';
         $rc_pt = $settings['researchcenter_post_type'] ?? $settings['default_research_post_type'] ?? 'post';
         foreach ($research_post_types as $pt) {
@@ -1429,6 +1458,10 @@ final class Plugin {
             'hub' => [
                 'label' => __('Hub', 'aapg'),
                 'fallback_key' => 'content_images_instructions_hub',
+            ],
+            'hubmodeb' => [
+                'label' => __('Hub Mode B', 'aapg'),
+                'fallback_key' => 'content_images_instructions_hubmodeb',
             ],
         ];
         foreach ($kind_sections as $kind => $sec) {

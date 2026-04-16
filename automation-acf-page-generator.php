@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Automation ACF Page Generator (OpenAI)
  * Description: Generates a child page from an Elementor template category and populates ACF fields using OpenAI JSON Schema.
- * Version: 1.0.46
+ * Version: 1.0.48
  * Author: CSC Dallas Workspace
  * Requires at least: 6.0
  * Requires PHP: 7.4
@@ -11,7 +11,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-define('AAPG_PLUGIN_VERSION', '1.0.46');
+define('AAPG_PLUGIN_VERSION', '1.0.48');
 define('AAPG_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('AAPG_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -243,16 +243,18 @@ function custom_acf_youtube_video_shortcode($atts) {
             <!-- ✅ Show thumbnail -->
             <div class="acf-youtube-video-thumb" data-embed="<?php echo esc_url($embed_url); ?>">
                 <img src="<?php echo esc_url($thumb_url); ?>" alt="Video Thumbnail">
-                <button type="button" class="acf-youtube-play-btn"><img src="https://dallasspine.com/wp-content/uploads/2026/04/videoplay.webp" /></button>
+                <button type="button" class="acf-youtube-play-btn"><img src="https://dallasspine.com/wp-content/uploads/2026/04/playvdnew.webp" /></button>
             </div>
 
         <?php else : ?>
             <!-- ✅ No thumbnail → show video directly -->
-            <iframe 
-                src="<?php echo esc_url($embed_url); ?>" 
-                allow="autoplay; encrypted-media" 
-                allowfullscreen>
-            </iframe>
+            <div class="acf-youtube-video-frame">
+                <iframe 
+                    src="<?php echo esc_url($embed_url); ?>" 
+                    allow="autoplay; encrypted-media" 
+                    allowfullscreen>
+                </iframe>
+            </div>
         <?php endif; ?>
 
     </div>
@@ -260,16 +262,17 @@ function custom_acf_youtube_video_shortcode($atts) {
     <style>
         #<?php echo esc_attr($unique_id); ?> {
             max-width: 1000px;
-            margin: 0 auto;
+            margin: 8rem auto;
         }
 
         #<?php echo esc_attr($unique_id); ?> .acf-youtube-video-thumb {
             position: relative;
             cursor: pointer;
             overflow: hidden;
-            border-radius: 24px;
             aspect-ratio: 16 / 9;
             background: #0f2354;
+            border-radius: 24px;
+            overflow: hidden;
         }
 
         #<?php echo esc_attr($unique_id); ?> .acf-youtube-video-thumb img {
@@ -283,22 +286,57 @@ function custom_acf_youtube_video_shortcode($atts) {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 74px;
-            height: 74px;
-            border-radius: 50%;
-            border: none;
-            background: rgba(255,255,255,0.2);
-            color: #fff;
-            font-size: 28px;
+            width: 100px;
+            height: 100px;
             cursor: pointer;
+            border: none;
+            background: none;
+            padding: 0;
+            margin: 0;
+            outline: none;
+            border-radius: 50%;
+            box-shadow: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 0 0 transparent;
         }
 
-        #<?php echo esc_attr($unique_id); ?> iframe {
+        /* Responsive YouTube frame container */
+        #<?php echo esc_attr($unique_id); ?> .acf-youtube-video-frame {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 24px;
+            overflow: hidden;
+            background: #1A345F;
+        }
+
+        #<?php echo esc_attr($unique_id); ?> .acf-youtube-video-frame iframe {
+            position: absolute;
+            inset: 0;
             width: 100%;
             height: 100%;
             border: 0;
-            border-radius: 24px;
-            aspect-ratio: 16 / 9;
+            display: block;
+        }
+        @media screen and (max-width: 1024px) {
+            #<?php echo esc_attr($unique_id); ?> {
+                margin: 6rem auto;
+                padding: 0 1.5rem !important;
+            }
+            #<?php echo esc_attr($unique_id); ?> .acf-youtube-play-btn{
+                width: 74px;
+                height: 74px;
+            }
+            .e-con-inner:has(#<?php echo esc_attr($unique_id); ?>) {
+                  max-width: 100% !important;
+                  width: 100% !important;
+                  display: block !important;
+            }
+        }
+        @media (max-width: 768px) {
+            #<?php echo esc_attr($unique_id); ?> {
+                margin: 3rem auto;
+            }
         }
     </style>
 
@@ -312,7 +350,7 @@ function custom_acf_youtube_video_shortcode($atts) {
 
             thumb.addEventListener('click', function() {
                 const embedUrl = this.getAttribute('data-embed') + '&autoplay=1';
-                wrapper.innerHTML = '<iframe src="' + embedUrl + '" allow="autoplay; encrypted-media" allowfullscreen></iframe>';
+                wrapper.innerHTML = '<div class="acf-youtube-video-frame"><iframe src="' + embedUrl + '" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>';
             });
         });
     </script>

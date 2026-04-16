@@ -317,6 +317,25 @@ function aapg_content_images_acf_group_for_kind(string $kind): string {
         }
         return isset($settings['default_acf_group']) ? (string) $settings['default_acf_group'] : '';
     }
+    if ($kind === 'hubmodeb') {
+        $hubmodeb_group = isset($settings['hubmodeb_acf_group']) ? (string) $settings['hubmodeb_acf_group'] : '';
+        if ($hubmodeb_group !== '') {
+            return $hubmodeb_group;
+        }
+        $hub_group = isset($settings['hub_acf_group']) ? (string) $settings['hub_acf_group'] : '';
+        if ($hub_group !== '') {
+            return $hub_group;
+        }
+        $hub_maker_group = isset($settings['hub_maker_default_acf_group']) ? (string) $settings['hub_maker_default_acf_group'] : '';
+        if ($hub_maker_group !== '') {
+            return $hub_maker_group;
+        }
+        $stub_group = isset($settings['stub_acf_group']) ? (string) $settings['stub_acf_group'] : '';
+        if ($stub_group !== '') {
+            return $stub_group;
+        }
+        return isset($settings['default_acf_group']) ? (string) $settings['default_acf_group'] : '';
+    }
     return '';
 }
 
@@ -347,9 +366,10 @@ function aapg_content_images_upload_instructions_for_kind(string $kind): string 
         : '';
     $map = [
         'researchcenter' => 'content_images_instructions_researchcenter',
-        'blog'             => 'content_images_instructions_blog',
-        'stub'             => 'content_images_instructions_stub',
-        'hub'              => 'content_images_instructions_hub',
+        'blog'           => 'content_images_instructions_blog',
+        'stub'           => 'content_images_instructions_stub',
+        'hub'            => 'content_images_instructions_hub',
+        'hubmodeb'       => 'content_images_instructions_hubmodeb',
     ];
     $opt_key = $map[$kind] ?? '';
     if ($opt_key !== '' && !empty($settings[$opt_key])) {
@@ -371,7 +391,7 @@ function aapg_content_images_sanitize_field_instructions_array($value): array {
     if (!is_array($value)) {
         return [];
     }
-    $kinds = ['researchcenter', 'blog', 'stub', 'hub'];
+    $kinds = ['researchcenter', 'blog', 'stub', 'hub', 'hubmodeb'];
     $out = [];
     foreach ($kinds as $kind) {
         if (!isset($value[$kind]) || !is_array($value[$kind])) {
@@ -398,7 +418,7 @@ function aapg_content_images_discover_instruction_slots(string $kind): array {
     $rows = [];
     if ($kind === 'researchcenter' || $kind === 'blog') {
         $rows[] = ['key' => 'feature_image', 'label' => __('Featured image', 'aapg')];
-    } elseif ($kind === 'stub' || $kind === 'hub') {
+    } elseif ($kind === 'stub' || $kind === 'hub' || $kind === 'hubmodeb') {
         $g = aapg_content_images_acf_group_for_kind($kind);
         if ($g !== '' && function_exists('acf_get_fields')) {
             foreach (aapg_acf_collect_media_field_entries_schema_only($g) as $e) {

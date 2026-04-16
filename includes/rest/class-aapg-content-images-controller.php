@@ -39,9 +39,9 @@ class AAPG_Content_Images_Controller extends \WP_REST_Controller {
     private function get_read_args(): array {
         return [
             'type' => [
-                'description' => __('Page kind: researchcenter or blog = featured image only; stub or hub = ACF image fields only (no Elementor). Omit for full slots list.', 'aapg'),
+                'description' => __('Page kind: researchcenter or blog = featured image only; stub, hub, or hubmodeb = ACF image fields only (no Elementor). Omit for full slots list.', 'aapg'),
                 'type'          => 'string',
-                'enum'          => ['researchcenter', 'research', 'blog', 'stub', 'hub'],
+                'enum'          => ['researchcenter', 'research', 'blog', 'stub', 'hub', 'hubmodeb'],
                 'required'      => false,
             ],
         ];
@@ -55,14 +55,14 @@ class AAPG_Content_Images_Controller extends \WP_REST_Controller {
             'type' => [
                 'description' => __('Same as GET: simplified response shape when set.', 'aapg'),
                 'type'          => 'string',
-                'enum'          => ['researchcenter', 'research', 'blog', 'stub', 'hub'],
+                'enum'          => ['researchcenter', 'research', 'blog', 'stub', 'hub', 'hubmodeb'],
                 'required'      => false,
             ],
         ];
     }
 
     /**
-     * @return 'researchcenter'|'blog'|'stub'|'hub'|null
+     * @return 'researchcenter'|'blog'|'stub'|'hub'|'hubmodeb'|null
      */
     private function parse_type_param(\WP_REST_Request $request): ?string {
         $raw = $request->get_param('type');
@@ -73,7 +73,7 @@ class AAPG_Content_Images_Controller extends \WP_REST_Controller {
         if ($t === 'research') {
             $t = 'researchcenter';
         }
-        if (in_array($t, ['researchcenter', 'blog', 'stub', 'hub'], true)) {
+        if (in_array($t, ['researchcenter', 'blog', 'stub', 'hub', 'hubmodeb'], true)) {
             return $t;
         }
         return null;
@@ -107,10 +107,10 @@ class AAPG_Content_Images_Controller extends \WP_REST_Controller {
         $page_type = (string) get_post_meta($post_id, 'aapg_page_type', true);
         $kind = $this->parse_type_param($request);
         if ($kind !== null) {
-            if (($kind === 'stub' || $kind === 'hub') && aapg_content_images_acf_group_for_kind($kind) === '') {
+            if (in_array($kind, ['stub', 'hub', 'hubmodeb'], true) && aapg_content_images_acf_group_for_kind($kind) === '') {
                 return new \WP_Error(
                     'aapg_api_acf_group_missing',
-                    __('ACF field group for this type is not set in API Mode Settings (Stub or Hub).', 'aapg'),
+                    __('ACF field group for this type is not set in API Mode Settings (Stub, Hub, or Hub Mode B).', 'aapg'),
                     ['status' => 400]
                 );
             }
@@ -148,7 +148,7 @@ class AAPG_Content_Images_Controller extends \WP_REST_Controller {
         $page_type = (string) get_post_meta($post_id, 'aapg_page_type', true);
         $kind = $this->parse_type_param($request);
         $acf_group = (string) get_post_meta($post_id, 'aapg_acf_group_id', true);
-        if ($kind === 'stub' || $kind === 'hub') {
+        if (in_array($kind, ['stub', 'hub', 'hubmodeb'], true)) {
             $g = aapg_content_images_acf_group_for_kind($kind);
             if ($g !== '') {
                 $acf_group = $g;
@@ -225,8 +225,8 @@ class AAPG_Content_Images_Controller extends \WP_REST_Controller {
         }
 
         $is_stub_or_hub_request =
-            $kind === 'stub' || $kind === 'hub'
-            || ($kind === null && in_array($page_type, ['stub', 'hub'], true));
+            in_array($kind, ['stub', 'hub', 'hubmodeb'], true)
+            || ($kind === null && in_array($page_type, ['stub', 'hub', 'hubmodeb'], true));
         if ($is_stub_or_hub_request) {
             // For stub/hub, also accept flat image fields (e.g. feature_image) alongside acf slot updates.
             // Remove control keys so only flat ACF field-name keys are applied here.
@@ -240,10 +240,10 @@ class AAPG_Content_Images_Controller extends \WP_REST_Controller {
             }
         }
         if ($kind !== null) {
-            if (($kind === 'stub' || $kind === 'hub') && aapg_content_images_acf_group_for_kind($kind) === '') {
+            if (in_array($kind, ['stub', 'hub', 'hubmodeb'], true) && aapg_content_images_acf_group_for_kind($kind) === '') {
                 return new \WP_Error(
                     'aapg_api_acf_group_missing',
-                    __('ACF field group for this type is not set in API Mode Settings (Stub or Hub).', 'aapg'),
+                    __('ACF field group for this type is not set in API Mode Settings (Stub, Hub, or Hub Mode B).', 'aapg'),
                     ['status' => 400]
                 );
             }
@@ -273,7 +273,7 @@ class AAPG_Content_Images_Controller extends \WP_REST_Controller {
      *
      * Stub/hub use the ACF field group from API Mode Settings (not post meta).
      *
-     * @param 'researchcenter'|'blog'|'stub'|'hub' $kind
+     * @param 'researchcenter'|'blog'|'stub'|'hub'|'hubmodeb' $kind
      * @return array<int|string, mixed>|\stdClass
      */
     private function build_response_for_kind(int $post_id, string $kind, bool $for_post = false) {

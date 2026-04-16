@@ -55,8 +55,8 @@ class AAPG_REST_Controller extends \WP_REST_Controller {
             'mode' => [
                 'required'          => true,
                 'type'              => 'string',
-                'enum'              => ['stub', 'hub', 'researchcenter', 'blog'],
-                'description'       => __('Mode: stub, hub, researchcenter, or blog', 'aapg'),
+                'enum'              => ['stub', 'hub', 'hubmodeb', 'researchcenter', 'blog'],
+                'description'       => __('Mode: stub, hub, hubmodeb, researchcenter, or blog', 'aapg'),
             ],
             'OnlySchema' => [
                 'required'          => false,
@@ -73,8 +73,8 @@ class AAPG_REST_Controller extends \WP_REST_Controller {
             'mode' => [
                 'required'          => true,
                 'type'              => 'string',
-                'enum'              => ['stub', 'hub', 'researchcenter', 'blog'],
-                'description'       => __('Mode: stub, hub, researchcenter, or blog', 'aapg'),
+                'enum'              => ['stub', 'hub', 'hubmodeb', 'researchcenter', 'blog'],
+                'description'       => __('Mode: stub, hub, hubmodeb, researchcenter, or blog', 'aapg'),
             ],
             'AddPage' => [
                 'required'          => true,
@@ -147,6 +147,35 @@ class AAPG_REST_Controller extends \WP_REST_Controller {
             }
             if (empty($acf_group) || !function_exists('acf_get_fields')) {
                 return new \WP_Error('rest_missing_config', __('Hub ACF group not configured in settings.', 'aapg'), ['status' => 500]);
+            }
+            require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-acf-group-openaijsonschema.php';
+            $schema = \AAPG\Utilities\AAPG_ACF_Group_OpenAIJSONSchema::acf_schema_from_group($acf_group);
+            $schema = $this->strip_video_fields_from_generate_schema($schema);
+            $schema['properties']['page_title'] = ['type' => 'string', 'description' => 'Page title'];
+            $schema['properties']['page_slug'] = ['type' => 'string', 'description' => 'Page slug'];
+            $required = $schema['required'] ?? [];
+            $required = array_unique(array_merge($required, ['page_title', 'page_slug']));
+            $schema['required'] = array_values($required);
+            return $schema;
+        }
+
+        if ($mode === 'hubmodeb') {
+            $settings = get_option(AAPG_OPTION_KEY, []);
+            $acf_group = (string) ($settings['hubmodeb_acf_group'] ?? '');
+            if ($acf_group === '') {
+                $acf_group = (string) ($settings['hub_acf_group'] ?? '');
+            }
+            if ($acf_group === '') {
+                $acf_group = (string) ($settings['hub_maker_default_acf_group'] ?? '');
+            }
+            if ($acf_group === '') {
+                $acf_group = (string) ($settings['stub_acf_group'] ?? '');
+            }
+            if ($acf_group === '') {
+                $acf_group = (string) ($settings['default_acf_group'] ?? '');
+            }
+            if (empty($acf_group) || !function_exists('acf_get_fields')) {
+                return new \WP_Error('rest_missing_config', __('Hub Mode B ACF group not configured in settings.', 'aapg'), ['status' => 500]);
             }
             require_once AAPG_PLUGIN_DIR . 'includes/ulities/aapg-acf-group-openaijsonschema.php';
             $schema = \AAPG\Utilities\AAPG_ACF_Group_OpenAIJSONSchema::acf_schema_from_group($acf_group);
@@ -237,6 +266,9 @@ class AAPG_REST_Controller extends \WP_REST_Controller {
         }
         if ($mode === 'hub') {
             return $this->create_hub_page($body);
+        }
+        if ($mode === 'hubmodeb') {
+            return $this->create_hubmodeb_page($body);
         }
         if ($mode === 'researchcenter') {
             return $this->create_research_post($body);
@@ -372,6 +404,72 @@ class AAPG_REST_Controller extends \WP_REST_Controller {
             '',
             '',
             'hub',
+            'publish'
+        );
+
+        if (is_wp_error($result)) {
+            return new \WP_Error('rest_create_failed', $result->get_error_message(), ['status' => 500]);
+        }
+
+        return $this->build_success_response($result['page_id'], 'page');
+    }
+
+    private function create_hubmodeb_page(array $body): \WP_REST_Response|\WP_Error {
+        $settings = get_option(AAPG_OPTION_KEY, []);
+        $template_id = (int) ($settings['hubmodeb_elementor_template'] ?? 0);
+        if ($template_id <= 0) {
+            $template_id = (int) ($settings['hub_elementor_template'] ?? 0);
+        }
+        if ($template_id <= 0) {
+            $template_id = (int) ($settings['hub_maker_default_elementor_template'] ?? 0);
+        }
+        if ($template_id <= 0) {
+            $template_id = (int) ($settings['default_elementor_template'] ?? 0);
+        }
+
+        $acf_group = (string) ($settings['hubmodeb_acf_group'] ?? '');
+        if ($acf_group === '') {
+            $acf_group = (string) ($settings['hub_acf_group'] ?? '');
+        }
+        if ($acf_group === '') {
+            $acf_group = (string) ($settings['hub_maker_default_acf_group'] ?? '');
+        }
+        if ($acf_group === '') {
+            $acf_group = (string) ($settings['stub_acf_group'] ?? '');
+        }
+        if ($acf_group === '') {
+            $acf_group = (string) ($settings['default_acf_group'] ?? '');
+        }
+
+        $parent_id = (int) ($settings['hubmodeb_default_parent_page_id'] ?? 0);
+        if ($parent_id <= 0) {
+            $parent_id = (int) ($settings['hub_default_parent_page_id'] ?? 0);
+        }
+
+        if (empty($acf_group)) {
+            return new \WP_Error('rest_missing_config', __('Hub Mode B ACF group not configured.', 'aapg'), ['status' => 500]);
+        }
+        if ($template_id <= 0) {
+            return new \WP_Error('rest_missing_config', __('Hub Mode B Elementor template not configured.', 'aapg'), ['status' => 500]);
+        }
+
+        $page_title = isset($body['page_title']) ? sanitize_text_field($body['page_title']) : '';
+        if (empty($page_title)) {
+            return new \WP_Error('rest_missing_field', __('page_title is required.', 'aapg'), ['status' => 400]);
+        }
+
+        $body = array_diff_key($body, array_flip(array_merge(self::STUB_API_STRIP_KEYS, self::GENERATE_EXCLUDE_VIDEO_KEYS)));
+
+        require_once AAPG_PLUGIN_DIR . 'includes/nodes/aapg-stub-node.php';
+        $result = \AAPG\Nodes\AAPG_Stub_Node::create_page_from_json_result(
+            $body,
+            $page_title,
+            $parent_id,
+            $template_id,
+            $acf_group,
+            '',
+            '',
+            'hubmodeb',
             'publish'
         );
 

@@ -35,7 +35,8 @@ class AAPG_Hub_Maker {
         int $parent_page_id = 0,
         $stream_callback = null,
         int $existing_page_id = 0,
-        $existing_content = ''
+        $existing_content = '',
+        string $page_type_for_save = 'hub'
     ) {
         if (empty($prompt)) {
             return new \WP_Error('prompt_required', 'Prompt content is required for hub generation');
@@ -101,7 +102,8 @@ class AAPG_Hub_Maker {
             $prompt,
             $page_title,
             $parent_page_id,
-            $existing_page_id
+            $existing_page_id,
+            $page_type_for_save
         ) {
             if ($event_type === 'response.output_text.delta' && !empty($decoded['delta'])) {
                 $streamed_content .= $decoded['delta'];
@@ -158,7 +160,7 @@ class AAPG_Hub_Maker {
                         $acf_group_id,
                         $prompt_id,
                         $prompt,
-                        'hub' // Page type
+                        $page_type_for_save
                     );
                 }
 

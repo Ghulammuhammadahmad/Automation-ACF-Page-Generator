@@ -22,6 +22,12 @@ class AAPG_Image_Info_By_Type_Controller extends \WP_REST_Controller {
                 'permission_callback' => [$this, 'check_api_key'],
                 'args'                => $this->get_read_args(),
             ],
+            [
+                'methods'             => \WP_REST_Server::CREATABLE,
+                'callback'            => [$this, 'get_schema_by_type'],
+                'permission_callback' => [$this, 'check_api_key'],
+                'args'                => $this->get_read_args(),
+            ],
         ]);
     }
 
@@ -31,16 +37,16 @@ class AAPG_Image_Info_By_Type_Controller extends \WP_REST_Controller {
     private function get_read_args(): array {
         return [
             'type' => [
-                'description' => __('Page kind: researchcenter, research, blog, stub, or hub.', 'aapg'),
+                'description' => __('Page kind: researchcenter, research, blog, stub, hub, or hubmodeb.', 'aapg'),
                 'type'          => 'string',
-                'enum'          => ['researchcenter', 'research', 'blog', 'stub', 'hub'],
+                'enum'          => ['researchcenter', 'research', 'blog', 'stub', 'hub', 'hubmodeb'],
                 'required'      => true,
             ],
         ];
     }
 
     /**
-     * @return 'researchcenter'|'blog'|'stub'|'hub'|null
+     * @return 'researchcenter'|'blog'|'stub'|'hub'|'hubmodeb'|null
      */
     private function parse_type_param(\WP_REST_Request $request): ?string {
         $raw = $request->get_param('type');
@@ -51,7 +57,7 @@ class AAPG_Image_Info_By_Type_Controller extends \WP_REST_Controller {
         if ($t === 'research') {
             $t = 'researchcenter';
         }
-        if (in_array($t, ['researchcenter', 'blog', 'stub', 'hub'], true)) {
+        if (in_array($t, ['researchcenter', 'blog', 'stub', 'hub', 'hubmodeb'], true)) {
             return $t;
         }
         return null;
@@ -90,15 +96,31 @@ class AAPG_Image_Info_By_Type_Controller extends \WP_REST_Controller {
             );
         }
 
-        if (($kind === 'stub' || $kind === 'hub') && aapg_content_images_acf_group_for_kind($kind) === '') {
+        if (in_array($kind, ['stub', 'hub', 'hubmodeb'], true) && aapg_content_images_acf_group_for_kind($kind) === '') {
             return new \WP_Error(
                 'aapg_api_acf_group_missing',
-                __('ACF field group for this type is not set in API Mode Settings (Stub or Hub).', 'aapg'),
+                __('ACF field group for this type is not set in API Mode Settings (Stub, Hub, or Hub Mode B).', 'aapg'),
                 ['status' => 400]
             );
         }
 
-        if ($kind === 'researchcenter' || $kind === 'blog') {
+        if (in_array($kind, ['stub', 'hub', 'hubmodeb'], true)) {
+            $acf_group = aapg_content_images_acf_group_for_kind($kind);
+            $entries = $acf_group !== '' ? aapg_acf_collect_media_field_entries_schema_only($acf_group) : [];
+            $payload = [];
+            foreach ($entries as $e) {
+                $payload[] = [
+                    'field_key'     => isset($e['field_key']) ? (string) $e['field_key'] : '',
+                    'field_name'    => isset($e['field_name']) ? (string) $e['field_name'] : '',
+                    'field_title'   => isset($e['field_title']) ? (string) $e['field_title'] : '',
+                    'value'         => '',
+                    'is_repeater'   => !empty($e['is_repeater']),
+                    'repeater_path' => isset($e['repeater_path']) ? (string) $e['repeater_path'] : '',
+                    'example_index' => isset($e['example_index']) && is_numeric($e['example_index']) ? (int) $e['example_index'] : null,
+                ];
+            }
+            $payload = aapg_video_merge_static_rows_into_field_list($payload, null);
+        } elseif ($kind === 'researchcenter' || $kind === 'blog') {
             $title = __('Featured image', 'aapg');
             $payload = [
                 [
@@ -111,22 +133,6 @@ class AAPG_Image_Info_By_Type_Controller extends \WP_REST_Controller {
                     'example_index' => null,
                 ],
             ];
-            $payload = aapg_video_merge_static_rows_into_field_list($payload, null);
-        } else {
-            $acf_group = aapg_content_images_acf_group_for_kind($kind);
-            $entries = $acf_group !== '' ? aapg_acf_collect_media_field_entries_schema_only($acf_group) : [];
-            $payload = [];
-            foreach ($entries as $e) {
-                $payload[] = [
-                    'field_key'   => isset($e['field_key']) ? (string) $e['field_key'] : '',
-                    'field_name'  => isset($e['field_name']) ? (string) $e['field_name'] : '',
-                    'field_title' => isset($e['field_title']) ? (string) $e['field_title'] : '',
-                    'value'       => '',
-                    'is_repeater' => !empty($e['is_repeater']),
-                    'repeater_path' => isset($e['repeater_path']) ? (string) $e['repeater_path'] : '',
-                    'example_index' => isset($e['example_index']) && is_numeric($e['example_index']) ? (int) $e['example_index'] : null,
-                ];
-            }
             $payload = aapg_video_merge_static_rows_into_field_list($payload, null);
         }
 

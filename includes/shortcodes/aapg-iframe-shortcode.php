@@ -277,7 +277,7 @@ function aapg_get_edit_with_ai_box($page_id) {
     }
     
     // Default to stub if no page type is stored
-    if (empty($stored_page_type) || !in_array($stored_page_type, ['hub', 'stub', 'research'], true)) {
+    if (empty($stored_page_type) || !in_array($stored_page_type, ['hub', 'hubmodeb', 'stub', 'research'], true)) {
         $stored_page_type = 'stub';
     }
     
@@ -297,6 +297,7 @@ function aapg_get_edit_with_ai_box($page_id) {
     $html .= '<label class="aapg-edit-with-ai-label">' . esc_html__('Page type', 'aapg') . '</label>';
     $html .= '<div class="aapg-edit-with-ai-type-options">';
     $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="hub"' . ($stored_page_type === 'hub' ? ' checked="checked"' : '') . ' /> ' . esc_html__('Hub', 'aapg') . '</label>';
+    $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="hubmodeb"' . ($stored_page_type === 'hubmodeb' ? ' checked="checked"' : '') . ' /> ' . esc_html__('Hub Mode B', 'aapg') . '</label>';
     $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="stub"' . ($stored_page_type === 'stub' ? ' checked="checked"' : '') . ' /> ' . esc_html__('Stub', 'aapg') . '</label>';
     $html .= '<label class="aapg-edit-with-ai-radio"><input type="radio" name="aapg_edit_page_type" value="research"' . ($stored_page_type === 'research' ? ' checked="checked"' : '') . ' /> ' . esc_html__('Research Center', 'aapg') . '</label>';
     $html .= '</div></div>';
@@ -397,6 +398,9 @@ function aapg_get_generation_info_box($page_id) {
         }
         if ($page_type === 'blog') {
             $page_type_label = __('Blog', 'aapg');
+        }
+        if ($page_type === 'hubmodeb') {
+            $page_type_label = __('Hub Mode B', 'aapg');
         }
         $html .= '<tr>';
         $html .= '<td style="padding: 4px 8px; font-weight: 600; color: #555; width: 140px; vertical-align: top;">' . esc_html__('Page Type:', 'aapg') . '</td>';
@@ -953,7 +957,8 @@ function aapg_iframe_render_repeater_row($base_name, $index, $row_data, $sub_fie
 function aapg_iframe_ajax_edit_with_ai() {
     $page_id = isset($_POST['page_id']) ? absint($_POST['page_id']) : 0;
     $edit_prompt = isset($_POST['edit_prompt']) ? sanitize_textarea_field(wp_unslash($_POST['edit_prompt'])) : '';
-    $page_type = isset($_POST['page_type']) ? sanitize_text_field($_POST['page_type']) : 'stub';
+    $raw_page_type = isset($_POST['page_type']) ? sanitize_text_field($_POST['page_type']) : 'stub';
+    $page_type = in_array($raw_page_type, ['hub', 'hubmodeb', 'stub', 'research'], true) ? $raw_page_type : 'stub';
     $post_type = isset($_POST['post_type']) ? sanitize_text_field($_POST['post_type']) : 'post';
 
     if (!$page_id || $edit_prompt === '') {
@@ -1048,10 +1053,10 @@ function aapg_iframe_ajax_edit_with_ai() {
             $page_id,
             $current_content_json
         );
-    } elseif ($page_type === 'hub') {
+    } elseif ($page_type === 'hub' || $page_type === 'hubmodeb') {
         if (empty($acf_group_id)) {
             echo "event: error\n";
-            echo 'data: ' . wp_json_encode(['message' => __('No ACF group for this page (required for Hub).', 'aapg')]) . "\n\n";
+            echo 'data: ' . wp_json_encode(['message' => __('No ACF group for this page (required for Hub / Hub Mode B).', 'aapg')]) . "\n\n";
             echo "event: done\n";
             echo 'data: ' . wp_json_encode(['done' => true]) . "\n\n";
             exit;
@@ -1071,7 +1076,8 @@ function aapg_iframe_ajax_edit_with_ai() {
             $parent_page_id,
             $stream_callback,
             $page_id,
-            $current_content_json
+            $current_content_json,
+            $page_type
         );
     } else {
         // stub
